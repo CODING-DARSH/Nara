@@ -1,0 +1,200 @@
+version: "3.9"
+
+networks:
+  nara-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  kafka_data:
+  zookeeper_data:
+
+services:
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: nara-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nara
+      POSTGRES_USER: nara
+      POSTGRES_PASSWORD: nara_secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - nara-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nara -d nara"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nara-redis
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "2gb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "nara_redis_secret"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - nara-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "nara_redis_secret", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: nara-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_OPTS: "-Dzookeeper.admin.enableServer=false"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper
+    networks:
+      - nara-net
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo ruok | timeout 2 bash -c 'cat > /dev/tcp/localhost/2181' && echo ok"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: nara-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    ports:
+      - "29092:29092"
+    networks:
+      - nara-net
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: nara-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - nara-net
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic food.events.raw --partitions 6 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic food.events.enriched --partitions 6 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic photo.upload.pending --partitions 4 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic user.graph.updated --partitions 6 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic recommendation.feedback --partitions 4 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic wearable.sync.events --partitions 2 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic api.requests --partitions 4 --replication-factor 1 &&
+        echo "All Kafka topics created."
+
+  minio:
+    image: minio/minio:latest
+    container_name: nara-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: nara_minio
+      MINIO_ROOT_PASSWORD: nara_minio_secret
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - nara-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: nara-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - nara-net
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mc alias set nara http://minio:9000 nara_minio nara_minio_secret &&
+        mc mb --ignore-existing nara/nara-food-photos-raw &&
+        mc mb --ignore-existing nara/nara-food-photos-processed &&
+        mc mb --ignore-existing nara/nara-model-artifacts &&
+        mc mb --ignore-existing nara/nara-exports &&
+        echo "All MinIO buckets created."
+
+  adminer:
+    image: adminer:latest
+    container_name: nara-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - nara-net
+    depends_on:
+      - postgres
+
+  auth-service:
+    build:
+      context: ./services/auth
+      dockerfile: Dockerfile
+    container_name: nara-auth
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://neondb_owner:npg_VUpS27YXsGKQ@ep-orange-lake-aoafbm87.c-2.ap-southeast-1.aws.neon.tech/neondb?ssl=require"
+      REDIS_URL: redis://:nara_redis_secret@redis:6379/0
+      JWT_SECRET_KEY: super_secret_jwt_key_change_in_production
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      REFRESH_TOKEN_EXPIRE_DAYS: 30
+      GOOGLE_CLIENT_ID: ""
+      GOOGLE_CLIENT_SECRET: ""
+      ENVIRONMENT: development
+    ports:
+      - "8001:8001"
+    networks:
+      - nara-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
