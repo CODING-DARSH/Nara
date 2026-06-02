@@ -14,7 +14,9 @@ volumes:
 services:
 
   postgres:
-    image: pgvector/pgvector:pg16
+    build:
+      context: ./infra/postgres
+      dockerfile: Dockerfile
     container_name: nara-postgres
     restart: unless-stopped
     environment:
@@ -25,7 +27,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - nara-net
     healthcheck:
@@ -189,12 +191,71 @@ services:
     networks:
       - nara-net
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  user-intelligence-service:
+    build:
+      context: ./services/user-intelligence
+      dockerfile: Dockerfile
+    container_name: nara-user-intelligence
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:  "postgresql+asyncpg://neondb_owner:npg_VUpS27YXsGKQ@ep-orange-lake-aoafbm87.c-2.ap-southeast-1.aws.neon.tech/neondb?ssl=require"
+      REDIS_URL: redis://:nara_redis_secret@redis:6379/0
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_SECRET_KEY: super_secret_jwt_key_change_in_production
+      JWT_ALGORITHM: HS256
+      ENVIRONMENT: development
+    ports:
+      - "8002:8002"
+    networks:
+      - nara-net
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  ingestion-service:
+    build:
+      context: ./services/ingestion
+      dockerfile: Dockerfile
+    container_name: nara-ingestion
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://neondb_owner:npg_VUpS27YXsGKQ@ep-orange-lake-aoafbm87.c-2.ap-southeast-1.aws.neon.tech/neondb?ssl=require"
+      REDIS_URL: redis://:nara_redis_secret@redis:6379/0
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_SECRET_KEY: super_secret_jwt_key_change_in_production
+      JWT_ALGORITHM: HS256
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: nara_minio
+      MINIO_SECRET_KEY: nara_minio_secret
+      MINIO_SECURE: "false"
+      ENVIRONMENT: development
+    ports:
+      - "8003:8003"
+    networks:
+      - nara-net
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
       interval: 15s
       timeout: 5s
       retries: 5
