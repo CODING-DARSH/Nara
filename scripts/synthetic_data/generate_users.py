@@ -349,7 +349,7 @@ def generate_user(user_id: int, persona_name: str = None) -> dict:
     # ── Step 11: Dietary restrictions ────────────────────────
     dietary_restrictions = sample_dietary_restrictions(religion, conditions, is_vegetarian)
 
-    # ── Step 12: Physical stats ───────────────────────────────
+    # ── Step 12: Physical stats ───────────────────────────────  bmi logic fix with hard constraints
     bmi = sample_bmi(age, gender, conditions, region)
     if bmi >= 35:
         if "type2_diabetes" not in conditions and random.random() < 0.40:
