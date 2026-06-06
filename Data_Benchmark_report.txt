@@ -193,3 +193,201 @@ PS C:\Users\Darsh\OneDrive\Desktop\Nara\scripts\synthetic_data> python validate.
   🔴 Significant issues — fix failures before training
 ============================================================
 PS C:\Users\Darsh\OneDrive\Desktop\Nara\scripts\synthetic_data> 
+
+=================================================================================================================================
+
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\scripts\synthetic_data> python validate.py
+============================================================
+  NARA Synthetic Data Validation v3
+  Senior-level: row logic + causality + cultural realism
+============================================================
+
+── File existence check ───────────────────────
+  ✓ users                    0.4 MB  1,000 rows
+  ✓ meal_logs              186.8 MB  907,324 rows
+  ✓ interactions            93.9 MB  824,638 rows
+  ✓ life_events              0.1 MB  639 rows
+  ✓ fast_days                0.8 MB  7,965 rows
+  ✓ skip_events              0.7 MB  11,041 rows
+  ✓ reorders                31.3 MB  428,416 rows
+  ✓ health_outcomes          0.3 MB  3,815 rows
+  ✓ weekly_context           5.2 MB  41,449 rows
+  ✓ social_context          67.4 MB  907,324 rows
+
+────────────────────────────────────────────────────────────
+  users.csv — biological + cultural plausibility
+────────────────────────────────────────────────────────────
+  Rows: 1,000
+  ✓ All user_ids unique
+  ✓ All ages 18–80
+  ✓ All BMIs 14–46
+  ✓ Gender values valid
+  ✓ Observance level 0–1
+  ✓ Health literacy 0–1
+  ✓ Habit strength 0–1
+  ✓ Cooking skill 0–1
+  ✓ BMI = weight/height² consistent (>95% rows)
+  ✓ Male BMI mean (25.4) not implausibly higher than female (26.1)
+  ✓ Obesity condition → BMI≥28 in >90% cases: 92.9%
+  ✓ Users with BMI≥35 but no obesity condition: 0 (0.0%)
+  ✓ BMI↔diabetes lift ≥2×: 3.81×
+  ✓ BMI↔hypertension lift ≥1.5×: 2.11×
+  ✗ Family history NOT correlated with conditions — still random sampling
+  ✓ All Jains are vegetarian
+  ✓ Muslim users have halal restriction (>95%)
+  ✓ Retired users age≥45 (>98%): 0 young retirees
+  ✓ Students age≤35 (>97%): 0 old students
+  ✓ PCOS only assigned to female users
+  ✓ alone living_situation → family_size≤2: 0 violations
+  ✓ High income + low-wage occupation: 1 (0.1%)
+  ✓ Vegetarian %: 29.6% (expect 20–45%)
+  ✓ Hindu dominant: 73.8%
+  ✓ Muslim present: 14.6%
+  ✓ North region: 49.7%
+  ✓ Persona diversity: 13 types
+  ✓ No persona dominates >20% of users
+
+  BMI distribution: mean=25.7 std=4.3 p10=21.0 p90=32.2
+  Age distribution: mean=39.1 std=13.9
+
+────────────────────────────────────────────────────────────
+  meal_logs.csv — temporal + nutritional + cultural logic
+────────────────────────────────────────────────────────────
+  Rows: 907,324
+  ✓ Row count: 907,324
+  ✓ Unique users: 1,000
+  ✓ Meals/user/week: 17.4 (expect 14–28)
+  ✓ Breakfast between 4–11am: 100.0%
+  ✓ Dinner between 5–11pm: 100.0%
+  ✓ Late-night meals 9–11pm: 96.9%
+  ✗ 42 duplicate (user, timestamp) rows — meal_id collision
+  ✓ Meal occasion ordering within days: 84 inversions
+  ✓ breakfast calories in 50–600 kcal range: 97.2%
+  ✓ lunch calories in 100–900 kcal range: 96.9%
+  ✓ dinner calories in 100–900 kcal range: 95.9%
+  ✓ snack calories in 30–500 kcal range: 95.2%
+  ✓ All GI scores 0–100
+  ✓ Calorie ≈ macro sum (within 2×) in 100.0% rows
+  ✓ Portion multipliers 0.3–3.0
+  ✗ 2256 rows: vegetarian users eating non-veg — fix get_restricted_dishes()
+  ✓ No Muslim users eating pork dishes
+  ✓ Fast day meals: non-fasting foods <2%: 0 rows
+  ✓ Season matches month: 0 mismatches
+  ✓ is_weekend matches day_of_week
+  ✗ life_event_phase is 'normal' in 100.0% rows — life events not propagated (C3 fix needed)
+  ✓ Top dish <10% of all meals: khichdi at 5.3%
+  ✓ Dish diversity: 164 unique dishes
+  ✓ Top cuisine <40%: 27.1%
+  ✓ Diabetic users: high-GI meals not marked compliant (<5%): 1.2%
+
+  Occasion dist: {'dinner': 0.298, 'lunch': 0.282, 'breakfast': 0.258, 'snack': 0.152, 'late_night': 0.009}
+  Avg cal/meal: 307  Avg protein: 12.4g  Avg GI: 53.2
+
+────────────────────────────────────────────────────────────
+  fast_days.csv — religion ↔ food cultural correctness
+────────────────────────────────────────────────────────────
+  Rows: 7,965
+  ✓ Ramadan → Muslims only
+  ✓ Hindu fasts → Hindus only
+  ✓ Paryushan → Jains only
+  ✓ No Hindu vrat foods as Ramadan iftar
+  ✓ Ramadan sehri foods realistic: 0.0% unrecognized
+  ✓ All fast day calorie impacts negative
+  ✓ Complete fast → bigger calorie reduction: -0.40 vs -0.20
+  ✓ Observance level 0–1 in fast_days
+  Fast type dist: {'monday_fast': 2721, 'ekadashi': 2128, 'ramadan': 1545, 'navratri': 1262, 'paryushan': 159, 'jain_monthly': 150}
+
+────────────────────────────────────────────────────────────
+  interactions.csv — click logic + position bias + signal quality
+────────────────────────────────────────────────────────────
+  Rows: 824,638
+  ✓ Skip dominates >40%: 71.8%
+  ✓ Order rate 1–20%: 7.4%
+  ✓ Position bias: rank-0 order rate (13.9%) > rank-3 (7.7%)
+  ✓ Position bias lift in realistic range 3–25×: 22.1×
+  ✓ action=order → final_ordered=True: 100.0%
+  ✓ action=skip → final_ordered=False: 100.0%
+  ✓ was_top3 consistent with recommendation_rank
+  ✓ Session duration: order(93s) > click(92s) > skip(8s)
+  ✓ user_health_match in [0,1]
+  ✓ price_match_score in [0,1]
+  ✓ cuisine_affinity in [0,1]
+  Rank 0 order rate: 13.9%
+
+────────────────────────────────────────────────────────────
+  health_outcomes.csv — BMI physics + compliance reality
+────────────────────────────────────────────────────────────
+  Rows: 3,815
+  ✗ BMI change has only 1 unique values — likely hardcoded constant
+  ✗ BMI change std=0.000 — too uniform, not realistic
+  ✓ BMI change in [-3, +3] per quarter: 100.0%
+  ✗ 239 rows have current_bmi < 14
+  ✓ No current_bmi > 55
+  ✓ No user loses/gains >15 BMI points across quarters
+  ✗ compliance_improvement = compliance_rate - 0.5 in 100% rows — hardcoded formula, fix compute_compliance_improvement()
+  ✓ health_trend not always stable: stable=82.4%
+  ✓ condition_severity_change has variation: 76.1% are zero
+  BMI change: mean=-2.000 std=0.000 min=-2.00 max=-2.00
+
+────────────────────────────────────────────────────────────
+  reorder_events.csv — semantic consistency
+────────────────────────────────────────────────────────────
+  Rows: 428,416
+  ✓ days_between ≥ 0
+  ✓ total_orders_dish monotonically increases per user+dish
+  ✓ More orders → higher reorder probability: {'1-2': 0.4596128792108692, '3-5': 0.6074334834220221, '6-10': 0.8549449149843978, '10+': 0.8986698410363069}
+  ✓ Rating proxy in [1, 5]
+  Reorder rate: 73.0%
+  Avg days between orders: 126.8
+
+────────────────────────────────────────────────────────────
+  skip_events.csv — compensatory meal logic
+────────────────────────────────────────────────────────────
+  Rows: 11,041
+  ✓ Dinner skips rarely have compensatory meals: 0.0%
+  ✓ Breakfast skip reasons valid: {'meeting', 'not_hungry', 'running_late', 'fasting', 'forgot'}
+  ✓ Compensatory calorie increase has variance: 46.4% positive
+  Skip occasion dist: {'breakfast': 8911, 'lunch': 1892, 'dinner': 238}
+
+────────────────────────────────────────────────────────────
+  user_weekly_context.csv — calorie spikes + nutritional gaps
+────────────────────────────────────────────────────────────
+  Rows: 41,449
+  ✓ No calorie explosions (P99=676 < 1076)
+  ✓ P95 calories within 2.5× mean: 1.2×
+  ✓ protein_gap_g ≥ 0
+  ✓ carb_gap_g ≥ 0
+  ✓ fat_gap_g ≥ 0
+  ✓ fiber_gap_g ≥ 0
+  ✓ budget_state in realistic range [0.5, 1.6]
+  ✓ Season matches month in weekly context: 0 mismatches
+  ✓ health_compliance_rate in [0,1]
+  ✓ meals_ordered + meals_cooked ≤ meals_logged in 100.0% rows
+  Avg weekly calories: 307.5  P95: 383.8  P99: 675.6
+
+────────────────────────────────────────────────────────────
+  social_eating_context.csv — location plausibility
+────────────────────────────────────────────────────────────
+  Rows: 907,324
+  ✗ 116617 non-hostel users with location_type=hostel — fix living_situation filter
+  ✓ alone social_context → group_size = 1
+  ✓ at_restaurant → group_size > 1 in >90%
+  ✓ Budget multipliers in [0.5, 2.5]
+  ✓ variety_score in [0,1]
+  Social context dist: {'alone': 0.412, 'with_family': 0.306, 'with_friends': 0.117, 'with_colleagues': 0.111, 'with_spouse': 0.029, 'at_restaurant': 0.025}
+
+────────────────────────────────────────────────────────────
+  life_events ↔ weekly_context — causal propagation
+────────────────────────────────────────────────────────────
+  ✗ started_gym has no protein effect: 0.4g (C3 fix needed — life events not propagated to meal generator)
+  ✗ financial_stress has no budget effect: 0.005 (C3 fix needed)
+  ✗ health_diagnosis has no compliance effect: -0.010 (C3 fix needed)
+  ✓ Event type diversity: 7
+  ✓ No single event type dominates >40%
+
+============================================================
+  Results: ✓ 106 passed  ✗ 12 failed  ⚠ 0 warnings
+  Score: 106/118 checks passing (89.8%)
+  🔴 Significant issues — fix failures before training
+============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\scripts\synthetic_data> 
