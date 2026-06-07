@@ -1,0 +1,539 @@
+=================================Logistic Regression--multinomial==============================
+
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python recommendation_ranker\train_logistic.py
+11:10:51 [INFO] nara.ranker.logistic — ============================================================
+11:10:51 [INFO] nara.ranker.logistic — Recommendation Ranker — Logistic Regression (Baseline)
+11:10:51 [INFO] nara.ranker.logistic — ============================================================
+11:10:51 [INFO] nara.ranker.logistic — Loading data...
+11:10:51 [INFO] nara.training — Loading interactions from ../../scripts/synthetic_data/data\interactions.csv
+11:10:53 [INFO] nara.training —   774,537 interactions loaded
+11:10:53 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+11:10:53 [INFO] nara.training —   1,000 users loaded
+11:10:53 [INFO] nara.training — Loading nutrition KB from ../../scripts/synthetic_data/data\nutrition_kb.csv
+11:10:53 [INFO] nara.training —   176 KB entries loaded
+11:10:54 [INFO] nara.ranker.logistic —   Numerical features:   ['context_time_of_day', 'context_day', 'context_budget', 'recommendation_rank', 'cuisine_affinity', 'price_match_score', 'user_health_match', 'age', 'health_literacy', 'habit_strength', 'bmi', 'gi_score', 'calories_kcal', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g']
+11:10:54 [INFO] nara.ranker.logistic —   Categorical features: ['context_season', 'context_stress', 'income_tier', 'region', 'cuisine_type']
+11:10:54 [INFO] nara.ranker.logistic —   Binary features:      ['is_vegetarian', 'was_top3']
+11:10:54 [INFO] nara.ranker.logistic —   Dataset shape: (774537, 42)
+11:10:56 [INFO] nara.training — Encoder saved → ./models\encoders.joblib
+11:10:56 [INFO] nara.ranker.logistic —   Class distribution: {0: 556307, 1: 160646, 2: 57584}
+11:10:57 [INFO] nara.training —   Train: 542,175 | Val: 77,454 | Test: 154,908
+11:10:57 [INFO] nara.ranker.logistic — Training Logistic Regression...
+C:\Users\Darsh\AppData\Roaming\Python\Python313\site-packages\sklearn\linear_model\_logistic.py:1272: FutureWarning: 'multi_class' was deprecated in version 1.5 and will be removed in 1.8. From then on, it will always use 'multinomial'. Leave it to its default value to avoid this warning.
+  warnings.warn(
+11:11:05 [INFO] nara.ranker.logistic — Evaluating on validation set...
+11:11:05 [INFO] nara.training — [VAL] Accuracy=0.7182 | F1=0.6005 | Precision=0.5159 | Recall=0.7182 | AUC=0.6297
+11:11:05 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.72      1.00      0.84     55631
+           1       0.00      0.00      0.00     16065
+           2       0.00      0.00      0.00      5758
+
+    accuracy                           0.72     77454
+   macro avg       0.24      0.33      0.28     77454
+weighted avg       0.52      0.72      0.60     77454
+
+11:11:05 [INFO] nara.training — [VAL] NDCG@10=0.4953
+11:11:05 [INFO] nara.ranker.logistic — Evaluating on test set...
+11:11:05 [INFO] nara.training — [TEST] Accuracy=0.7182 | F1=0.6005 | Precision=0.5159 | Recall=0.7182 | AUC=0.6308
+11:11:05 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.72      1.00      0.84    111262
+           1       0.00      0.00      0.00     32129
+           2       0.00      0.00      0.00     11517
+
+    accuracy                           0.72    154908
+   macro avg       0.24      0.33      0.28    154908
+weighted avg       0.52      0.72      0.60    154908
+
+11:11:05 [INFO] nara.training — [TEST] NDCG@10=0.121
+11:11:05 [INFO] nara.ranker.logistic — Top feature coefficients (order class):
+11:11:05 [INFO] nara.ranker.logistic — 
+            feature  coefficient
+recommendation_rank    -0.404184
+      is_vegetarian    -0.101668
+     context_budget     0.083910
+          protein_g    -0.071238
+           was_top3    -0.047584
+     context_stress    -0.045778
+            fiber_g     0.041852
+              fat_g     0.025722
+           gi_score    -0.013519
+                bmi    -0.007361
+     habit_strength    -0.006089
+context_time_of_day    -0.005876
+        income_tier    -0.004105
+                age    -0.003223
+      calories_kcal    -0.002286
+11:11:08 [INFO] nara.training — Confusion matrix saved → ./models\plots\ranker_logistic_cm.png
+11:11:09 [INFO] nara.training — Feature importance saved → ./models\plots\ranker_logistic_fi.png
+11:11:09 [INFO] nara.training — Model saved → ./models\ranker_logistic.joblib (0.0 MB)
+11:11:09 [INFO] nara.training — Metrics saved → ./models\ranker_logistic_metrics.json
+11:11:09 [INFO] nara.ranker.logistic — 
+============================================================
+11:11:09 [INFO] nara.ranker.logistic — SUMMARY — Ranker Logistic Regression
+11:11:09 [INFO] nara.ranker.logistic —   Test Accuracy : 0.7182
+11:11:09 [INFO] nara.ranker.logistic —   Test F1       : 0.6005
+11:11:09 [INFO] nara.ranker.logistic —   Test NDCG@10  : 0.121
+11:11:09 [INFO] nara.ranker.logistic —   Model saved   : ./models\ranker_logistic.joblib
+11:11:09 [INFO] nara.ranker.logistic — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> 
+
+
+
+=================================Logistic Regression--Balanced==============================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python recommendation_ranker\train_logistic.py
+11:20:49 [INFO] nara.ranker.logistic — ============================================================
+11:20:49 [INFO] nara.ranker.logistic — Recommendation Ranker — Logistic Regression (Baseline)
+11:20:49 [INFO] nara.ranker.logistic — ============================================================
+11:20:49 [INFO] nara.ranker.logistic — Loading data...
+11:20:49 [INFO] nara.training — Loading interactions from ../../scripts/synthetic_data/data\interactions.csv
+11:20:50 [INFO] nara.training —   774,537 interactions loaded
+11:20:50 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+11:20:50 [INFO] nara.training —   1,000 users loaded
+11:20:50 [INFO] nara.training — Loading nutrition KB from ../../scripts/synthetic_data/data\nutrition_kb.csv
+11:20:50 [INFO] nara.training —   176 KB entries loaded
+11:20:52 [INFO] nara.ranker.logistic —   Numerical features:   ['context_time_of_day', 'context_day', 'context_budget', 'recommendation_rank', 'cuisine_affinity', 'price_match_score', 'user_health_match', 'age', 'health_literacy', 'habit_strength', 'bmi', 'gi_score', 'calories_kcal', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g']
+11:20:52 [INFO] nara.ranker.logistic —   Categorical features: ['context_season', 'context_stress', 'income_tier', 'region', 'cuisine_type']
+11:20:52 [INFO] nara.ranker.logistic —   Binary features:      ['is_vegetarian', 'was_top3']
+11:20:52 [INFO] nara.ranker.logistic —   Dataset shape: (774537, 42)
+11:20:53 [INFO] nara.training — Encoder saved → ./models\encoders.joblib
+11:20:53 [INFO] nara.ranker.logistic —   Class distribution: {0: 556307, 1: 160646, 2: 57584}
+11:20:54 [INFO] nara.training —   Train: 542,175 | Val: 77,454 | Test: 154,908
+11:20:54 [INFO] nara.ranker.logistic — Training Logistic Regression...
+C:\Users\Darsh\AppData\Roaming\Python\Python313\site-packages\sklearn\linear_model\_logistic.py:1272: FutureWarning: 'multi_class' was deprecated in version 1.5 and will be removed in 1.8. From then on, it will always use 'multinomial'. Leave it to its default value to avoid this warning.
+  warnings.warn(
+11:21:01 [INFO] nara.ranker.logistic — Evaluating on validation set...
+11:21:01 [INFO] nara.training — [VAL] Accuracy=0.4578 | F1=0.5129 | Precision=0.6372 | Recall=0.4578 | AUC=0.6225
+11:21:01 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.80      0.51      0.63     55631
+           1       0.24      0.21      0.23     16065
+           2       0.12      0.60      0.20      5758
+
+    accuracy                           0.46     77454
+   macro avg       0.39      0.44      0.35     77454
+weighted avg       0.64      0.46      0.51     77454
+
+11:21:01 [INFO] nara.training — [VAL] NDCG@10=0.4778
+11:21:01 [INFO] nara.ranker.logistic — Evaluating on test set...
+11:21:02 [INFO] nara.training — [TEST] Accuracy=0.4569 | F1=0.5128 | Precision=0.6382 | Recall=0.4569 | AUC=0.6233
+11:21:02 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.81      0.51      0.63    111262
+           1       0.25      0.21      0.23     32129
+           2       0.12      0.59      0.20     11517
+
+    accuracy                           0.46    154908
+   macro avg       0.39      0.44      0.35    154908
+weighted avg       0.64      0.46      0.51    154908
+
+11:21:02 [INFO] nara.training — [TEST] NDCG@10=0.0784
+11:21:02 [INFO] nara.ranker.logistic — Top feature coefficients (order class):
+11:21:02 [INFO] nara.ranker.logistic — 
+            feature  coefficient
+recommendation_rank    -0.424477
+      is_vegetarian    -0.109335
+     context_budget     0.087598
+          protein_g    -0.072331
+           was_top3    -0.069108
+     context_stress    -0.046998
+            fiber_g     0.041957
+              fat_g     0.024824
+           gi_score    -0.013692
+                bmi    -0.007533
+     habit_strength    -0.005886
+context_time_of_day    -0.005245
+      calories_kcal    -0.004248
+                age    -0.004115
+        income_tier    -0.003452
+11:21:03 [INFO] nara.training — Confusion matrix saved → ./models\plots\ranker_logistic_cm.png
+11:21:03 [INFO] nara.training — Feature importance saved → ./models\plots\ranker_logistic_fi.png
+11:21:03 [INFO] nara.training — Model saved → ./models\ranker_logistic.joblib (0.0 MB)
+11:21:03 [INFO] nara.training — Metrics saved → ./models\ranker_logistic_metrics.json
+11:21:03 [INFO] nara.ranker.logistic — 
+============================================================
+11:21:03 [INFO] nara.ranker.logistic — SUMMARY — Ranker Logistic Regression
+11:21:03 [INFO] nara.ranker.logistic —   Test Accuracy : 0.4569
+11:21:03 [INFO] nara.ranker.logistic —   Test F1       : 0.5128
+11:21:03 [INFO] nara.ranker.logistic —   Test NDCG@10  : 0.0784
+11:21:03 [INFO] nara.ranker.logistic —   Model saved   : ./models\ranker_logistic.joblib
+11:21:03 [INFO] nara.ranker.logistic — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> 
+
+====================================================XGBOOST===============================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python recommendation_ranker\train_xgboost.py
+11:25:32 [INFO] nara.ranker.xgboost — ============================================================
+11:25:32 [INFO] nara.ranker.xgboost — Recommendation Ranker — XGBoost (Mid)
+11:25:32 [INFO] nara.ranker.xgboost — ============================================================
+11:25:32 [INFO] nara.ranker.xgboost — Loading data...
+11:25:32 [INFO] nara.training — Loading interactions from ../../scripts/synthetic_data/data\interactions.csv
+11:25:33 [INFO] nara.training —   774,537 interactions loaded
+11:25:33 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+11:25:33 [INFO] nara.training —   1,000 users loaded
+11:25:33 [INFO] nara.training — Loading nutrition KB from ../../scripts/synthetic_data/data\nutrition_kb.csv
+11:25:33 [INFO] nara.training —   176 KB entries loaded
+11:25:36 [INFO] nara.ranker.xgboost —   Features: 33 | Samples: 774,537
+11:25:36 [INFO] nara.ranker.xgboost —   Class distribution: {0: 556307, 1: 160646, 2: 57584}
+11:25:37 [INFO] nara.training —   Train: 542,175 | Val: 77,454 | Test: 154,908
+11:25:37 [INFO] nara.ranker.xgboost — Training XGBoost...
+[0]     validation_0-mlogloss:0.75444
+[50]    validation_0-mlogloss:0.71577
+[100]   validation_0-mlogloss:0.71132
+[150]   validation_0-mlogloss:0.70974
+[200]   validation_0-mlogloss:0.70895
+[250]   validation_0-mlogloss:0.70856
+[300]   validation_0-mlogloss:0.70818
+[350]   validation_0-mlogloss:0.70795
+[400]   validation_0-mlogloss:0.70778
+[425]   validation_0-mlogloss:0.70777
+11:26:17 [INFO] nara.ranker.xgboost —   Best iteration: 405
+11:26:18 [INFO] nara.training — [VAL] Accuracy=0.7182 | F1=0.6006 | Precision=0.5937 | Recall=0.7182 | AUC=0.6707
+11:26:18 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.72      1.00      0.84     55631
+           1       0.38      0.00      0.00     16065
+           2       0.00      0.00      0.00      5758
+
+    accuracy                           0.72     77454
+   macro avg       0.36      0.33      0.28     77454
+weighted avg       0.59      0.72      0.60     77454
+
+11:26:18 [INFO] nara.training — [VAL] NDCG@10=0.3712
+11:26:20 [INFO] nara.training — [TEST] Accuracy=0.7183 | F1=0.6006 | Precision=0.6196 | Recall=0.7183 | AUC=0.6719
+11:26:20 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.72      1.00      0.84    111262
+           1       0.50      0.00      0.00     32129
+           2       0.00      0.00      0.00     11517
+
+    accuracy                           0.72    154908
+   macro avg       0.41      0.33      0.28    154908
+weighted avg       0.62      0.72      0.60    154908
+
+11:26:20 [INFO] nara.training — [TEST] NDCG@10=0.4213
+11:26:20 [INFO] nara.ranker.xgboost — 
+Top 20 features:
+            feature  importance
+           was_top3    0.471090
+recommendation_rank    0.127966
+      is_vegetarian    0.041256
+          protein_g    0.036860
+       has_diabetes    0.025588
+           gi_score    0.025370
+    has_prediabetes    0.024001
+      calories_kcal    0.023667
+     context_budget    0.021712
+            carbs_g    0.018928
+              fat_g    0.017699
+            fiber_g    0.017475
+context_time_of_day    0.011630
+     context_stress    0.010568
+        has_obesity    0.008882
+        income_tier    0.008756
+            has_ibs    0.007035
+                age    0.006986
+                bmi    0.006955
+     habit_strength    0.006921
+11:26:21 [INFO] nara.training — Confusion matrix saved → ./models\plots\ranker_xgboost_cm.png
+11:26:21 [INFO] nara.training — Feature importance saved → ./models\plots\ranker_xgboost_fi.png
+11:26:21 [INFO] nara.training — XGBoost model saved → ./models\ranker_xgboost.json
+11:26:21 [WARNING] nara.training — skl2onnx/onnxmltools not installed, skipping ONNX export
+11:26:21 [INFO] nara.training — Metrics saved → ./models\ranker_xgboost_metrics.json
+11:26:21 [INFO] nara.ranker.xgboost — 
+============================================================
+11:26:21 [INFO] nara.ranker.xgboost — SUMMARY — Ranker XGBoost
+11:26:21 [INFO] nara.ranker.xgboost —   Test Accuracy : 0.7183
+11:26:21 [INFO] nara.ranker.xgboost —   Test F1       : 0.6006
+11:26:21 [INFO] nara.ranker.xgboost —   Test NDCG@10  : 0.4213
+11:26:21 [INFO] nara.ranker.xgboost —   Model saved   : ./models\ranker_xgboost.json
+11:26:21 [INFO] nara.ranker.xgboost — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training>  
+
+
+=======================================XGBOOST Balanced================================================
+
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python recommendation_ranker\train_xgboost.py
+11:35:19 [INFO] nara.ranker.xgboost — ============================================================
+11:35:19 [INFO] nara.ranker.xgboost — Recommendation Ranker — XGBoost (Mid)
+11:35:19 [INFO] nara.ranker.xgboost — ============================================================
+11:35:19 [INFO] nara.ranker.xgboost — Loading data...
+11:35:19 [INFO] nara.training — Loading interactions from ../../scripts/synthetic_data/data\interactions.csv
+11:35:22 [INFO] nara.training —   774,537 interactions loaded
+11:35:22 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+11:35:22 [INFO] nara.training —   1,000 users loaded
+11:35:22 [INFO] nara.training — Loading nutrition KB from ../../scripts/synthetic_data/data\nutrition_kb.csv
+11:35:22 [INFO] nara.training —   176 KB entries loaded
+11:35:29 [INFO] nara.ranker.xgboost —   Features: 33 | Samples: 774,537
+11:35:29 [INFO] nara.ranker.xgboost —   Class distribution: {0: 556307, 1: 160646, 2: 57584}
+11:35:31 [INFO] nara.training —   Train: 542,175 | Val: 77,454 | Test: 154,908
+11:35:31 [INFO] nara.ranker.xgboost — Training XGBoost...
+[0]     validation_0-mlogloss:1.09290
+[50]    validation_0-mlogloss:1.01637
+[100]   validation_0-mlogloss:1.00790
+[150]   validation_0-mlogloss:1.00418
+[200]   validation_0-mlogloss:1.00175
+[250]   validation_0-mlogloss:1.00008
+[300]   validation_0-mlogloss:0.99819
+[350]   validation_0-mlogloss:0.99657
+[400]   validation_0-mlogloss:0.99522
+[450]   validation_0-mlogloss:0.99395
+[499]   validation_0-mlogloss:0.99285
+11:36:48 [INFO] nara.ranker.xgboost —   Best iteration: 499
+11:36:49 [INFO] nara.training — [VAL] Accuracy=0.4691 | F1=0.5269 | Precision=0.6671 | Recall=0.4691 | AUC=0.6631
+11:36:49 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.84      0.50      0.63     55631
+           1       0.27      0.31      0.29     16065
+           2       0.13      0.58      0.22      5758
+
+    accuracy                           0.47     77454
+   macro avg       0.41      0.47      0.38     77454
+weighted avg       0.67      0.47      0.53     77454
+
+11:36:49 [INFO] nara.training — [VAL] NDCG@10=0.4842
+11:36:54 [INFO] nara.training — [TEST] Accuracy=0.4707 | F1=0.5288 | Precision=0.6687 | Recall=0.4707 | AUC=0.6639
+11:36:54 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.84      0.50      0.63    111262
+           1       0.27      0.32      0.29     32129
+           2       0.13      0.58      0.22     11517
+
+    accuracy                           0.47    154908
+   macro avg       0.41      0.47      0.38    154908
+weighted avg       0.67      0.47      0.53    154908
+
+11:36:54 [INFO] nara.training — [TEST] NDCG@10=0.5605
+11:36:54 [INFO] nara.ranker.xgboost — 
+Top 20 features:
+             feature  importance
+            was_top3    0.321914
+ recommendation_rank    0.154922
+       is_vegetarian    0.044538
+      context_budget    0.042347
+           protein_g    0.038641
+            gi_score    0.028173
+       calories_kcal    0.027497
+        has_diabetes    0.025104
+     has_prediabetes    0.023135
+             carbs_g    0.022665
+      context_stress    0.020151
+             fiber_g    0.019813
+               fat_g    0.018152
+ context_time_of_day    0.013869
+            has_pcos    0.012368
+has_high_cholesterol    0.011529
+         has_obesity    0.011518
+             has_ibs    0.011469
+                 age    0.011427
+         income_tier    0.011393
+11:36:56 [INFO] nara.training — Confusion matrix saved → ./models\plots\ranker_xgboost_cm.png
+11:36:56 [INFO] nara.training — Feature importance saved → ./models\plots\ranker_xgboost_fi.png
+11:36:57 [INFO] nara.training — XGBoost model saved → ./models\ranker_xgboost.json
+11:36:57 [WARNING] nara.training — skl2onnx/onnxmltools not installed, skipping ONNX export
+11:36:57 [INFO] nara.training — Metrics saved → ./models\ranker_xgboost_metrics.json
+11:36:57 [INFO] nara.ranker.xgboost — 
+============================================================
+11:36:57 [INFO] nara.ranker.xgboost — SUMMARY — Ranker XGBoost
+11:36:57 [INFO] nara.ranker.xgboost —   Test Accuracy : 0.4707
+11:36:57 [INFO] nara.ranker.xgboost —   Test F1       : 0.5288
+11:36:57 [INFO] nara.ranker.xgboost —   Test NDCG@10  : 0.5605
+11:36:57 [INFO] nara.ranker.xgboost —   Model saved   : ./models\ranker_xgboost.json
+11:36:57 [INFO] nara.ranker.xgboost — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> 
+
+==============================LightGBM=====================================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python recommendation_ranker\train_lightbgm.py
+11:41:44 [INFO] nara.ranker.lightgbm — ============================================================
+11:41:44 [INFO] nara.ranker.lightgbm — Recommendation Ranker — LightGBM (Best)
+11:41:44 [INFO] nara.ranker.lightgbm — ============================================================
+11:41:44 [INFO] nara.ranker.lightgbm — Loading data...
+11:41:44 [INFO] nara.training — Loading interactions from ../../scripts/synthetic_data/data\interactions.csv
+11:41:45 [INFO] nara.training —   774,537 interactions loaded
+11:41:45 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+11:41:45 [INFO] nara.training —   1,000 users loaded
+11:41:45 [INFO] nara.training — Loading nutrition KB from ../../scripts/synthetic_data/data\nutrition_kb.csv
+11:41:45 [INFO] nara.training —   176 KB entries loaded
+11:41:49 [INFO] nara.ranker.lightgbm —   Features: 33 | Samples: 774,537
+11:41:49 [INFO] nara.ranker.lightgbm —   Class distribution: {0: 556307, 1: 160646, 2: 57584}
+11:41:51 [INFO] nara.training —   Train: 542,175 | Val: 77,454 | Test: 154,908
+11:41:51 [INFO] nara.ranker.lightgbm — Training LightGBM...
+Training until validation scores don't improve for 20 rounds
+[50]    valid_0's multi_logloss: 0.711679
+[100]   valid_0's multi_logloss: 0.708502
+[150]   valid_0's multi_logloss: 0.707916
+[200]   valid_0's multi_logloss: 0.707498
+[250]   valid_0's multi_logloss: 0.707269
+[300]   valid_0's multi_logloss: 0.70705
+[350]   valid_0's multi_logloss: 0.706921
+[400]   valid_0's multi_logloss: 0.706782
+[450]   valid_0's multi_logloss: 0.706642
+[500]   valid_0's multi_logloss: 0.706513
+Did not meet early stopping. Best iteration is:
+[500]   valid_0's multi_logloss: 0.706513
+11:42:26 [INFO] nara.ranker.lightgbm —   Best iteration: 500
+11:42:34 [INFO] nara.training — [VAL] Accuracy=0.7181 | F1=0.6007 | Precision=0.5713 | Recall=0.7181 | AUC=0.6727
+11:42:34 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.72      1.00      0.84     55631
+           1       0.27      0.00      0.00     16065
+           2       0.00      0.00      0.00      5758
+
+    accuracy                           0.72     77454
+   macro avg       0.33      0.33      0.28     77454
+weighted avg       0.57      0.72      0.60     77454
+
+11:42:34 [INFO] nara.training — [VAL] NDCG@10=0.3956
+11:42:45 [INFO] nara.training — [TEST] Accuracy=0.7184 | F1=0.601 | Precision=0.6543 | Recall=0.7184 | AUC=0.6739
+11:42:45 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.72      1.00      0.84    111262
+           1       0.67      0.00      0.00     32129
+           2       0.00      0.00      0.00     11517
+
+    accuracy                           0.72    154908
+   macro avg       0.46      0.33      0.28    154908
+weighted avg       0.65      0.72      0.60    154908
+
+11:42:45 [INFO] nara.training — [TEST] NDCG@10=0.4372
+11:42:45 [INFO] nara.ranker.lightgbm — 
+Top 20 features (by gain):
+            feature          gain  split
+recommendation_rank 254791.953911   3897
+          protein_g  71834.448616   3755
+           gi_score  63462.864926   4427
+      calories_kcal  55133.538945   3694
+              fat_g  37542.898400   3619
+context_time_of_day  34437.064565   5443
+  price_match_score  33145.402586   7678
+            fiber_g  32392.297495   3399
+            carbs_g  31766.099432   3574
+   cuisine_affinity  31081.113357   7242
+  user_health_match  31057.478660   7281
+                bmi  29142.365689   6585
+      is_vegetarian  26044.583890   1002
+     context_budget  24772.826009   2382
+    health_literacy  24274.785483   5505
+     habit_strength  24130.740007   5313
+                age  22503.313797   5057
+           was_top3  21701.686230    138
+        context_day  12883.238967   2954
+     context_season  12488.226890   2997
+11:42:46 [INFO] nara.training — Confusion matrix saved → ./models\plots\ranker_lgbm_cm.png
+11:42:46 [INFO] nara.training — Feature importance saved → ./models\plots\ranker_lgbm_fi.png
+11:42:46 [INFO] nara.training — LightGBM model saved → ./models\ranker_lgbm.txt
+11:42:46 [WARNING] nara.training — onnxmltools not installed, skipping ONNX export
+11:42:46 [INFO] nara.training — Metrics saved → ./models\ranker_lgbm_metrics.json
+11:42:46 [INFO] nara.ranker.lightgbm — 
+============================================================
+11:42:46 [INFO] nara.ranker.lightgbm — SUMMARY — Ranker LightGBM
+11:42:46 [INFO] nara.ranker.lightgbm —   Test Accuracy : 0.7184
+11:42:46 [INFO] nara.ranker.lightgbm —   Test F1       : 0.601
+11:42:46 [INFO] nara.ranker.lightgbm —   Test NDCG@10  : 0.4372
+11:42:46 [INFO] nara.ranker.lightgbm —   Model saved   : ./models\ranker_lgbm.txt
+11:42:46 [INFO] nara.ranker.lightgbm — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> 
+
+============================LightGBM-Balanced===========================================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python recommendation_ranker\train_lightbgm.py
+11:44:29 [INFO] nara.ranker.lightgbm — ============================================================
+11:44:29 [INFO] nara.ranker.lightgbm — Recommendation Ranker — LightGBM (Best)
+11:44:29 [INFO] nara.ranker.lightgbm — ============================================================
+11:44:29 [INFO] nara.ranker.lightgbm — Loading data...
+11:44:29 [INFO] nara.training — Loading interactions from ../../scripts/synthetic_data/data\interactions.csv
+11:44:31 [INFO] nara.training —   774,537 interactions loaded
+11:44:31 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+11:44:31 [INFO] nara.training —   1,000 users loaded
+11:44:31 [INFO] nara.training — Loading nutrition KB from ../../scripts/synthetic_data/data\nutrition_kb.csv
+11:44:31 [INFO] nara.training —   176 KB entries loaded
+11:44:40 [INFO] nara.ranker.lightgbm —   Features: 33 | Samples: 774,537
+11:44:40 [INFO] nara.ranker.lightgbm —   Class distribution: {0: 556307, 1: 160646, 2: 57584}
+11:44:42 [INFO] nara.training —   Train: 542,175 | Val: 77,454 | Test: 154,908
+11:44:42 [INFO] nara.ranker.lightgbm — Training LightGBM...
+Training until validation scores don't improve for 20 rounds
+[50]    valid_0's multi_logloss: 1.00888
+[100]   valid_0's multi_logloss: 1.00259
+[150]   valid_0's multi_logloss: 0.999943
+[200]   valid_0's multi_logloss: 0.997719
+[250]   valid_0's multi_logloss: 0.995532
+[300]   valid_0's multi_logloss: 0.993662
+[350]   valid_0's multi_logloss: 0.991817
+[400]   valid_0's multi_logloss: 0.989967
+[450]   valid_0's multi_logloss: 0.988229
+[500]   valid_0's multi_logloss: 0.986484
+Did not meet early stopping. Best iteration is:
+[500]   valid_0's multi_logloss: 0.986484
+11:45:18 [INFO] nara.ranker.lightgbm —   Best iteration: 500
+11:45:30 [INFO] nara.training — [VAL] Accuracy=0.4736 | F1=0.5306 | Precision=0.6673 | Recall=0.4736 | AUC=0.6641
+11:45:30 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.84      0.51      0.63     55631
+           1       0.27      0.33      0.30     16065
+           2       0.13      0.57      0.22      5758
+
+    accuracy                           0.47     77454
+   macro avg       0.41      0.47      0.38     77454
+weighted avg       0.67      0.47      0.53     77454
+
+11:45:30 [INFO] nara.training — [VAL] NDCG@10=0.3388
+11:45:35 [INFO] nara.training — [TEST] Accuracy=0.4758 | F1=0.5329 | Precision=0.6698 | Recall=0.4758 | AUC=0.6656
+11:45:36 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.84      0.51      0.63    111262
+           1       0.28      0.33      0.30     32129
+           2       0.13      0.57      0.22     11517
+
+    accuracy                           0.48    154908
+   macro avg       0.42      0.47      0.38    154908
+weighted avg       0.67      0.48      0.53    154908
+
+11:45:36 [INFO] nara.training — [TEST] NDCG@10=0.5108
+11:45:36 [INFO] nara.ranker.lightgbm — 
+Top 20 features (by gain):
+            feature          gain  split
+recommendation_rank 440215.525882   4045
+          protein_g 101638.468858   3686
+           gi_score  95904.474263   4342
+      calories_kcal  81215.470472   3367
+     context_budget  68351.080935   2165
+  price_match_score  66621.747211   7621
+  user_health_match  64774.868873   7389
+   cuisine_affinity  64425.947932   7356
+                bmi  61507.569788   6819
+              fat_g  59919.714258   3663
+            fiber_g  54594.119456   3311
+            carbs_g  53116.748315   3564
+context_time_of_day  52753.147268   5064
+    health_literacy  52353.929548   5616
+           was_top3  51658.847591    169
+     habit_strength  49101.175826   5401
+                age  48109.141874   5308
+      is_vegetarian  42827.186540    925
+     context_stress  29933.360609   2029
+        context_day  25047.262190   2875
+11:45:36 [INFO] nara.training — Confusion matrix saved → ./models\plots\ranker_lgbm_cm.png
+11:45:36 [INFO] nara.training — Feature importance saved → ./models\plots\ranker_lgbm_fi.png
+11:45:37 [INFO] nara.training — LightGBM model saved → ./models\ranker_lgbm.txt
+11:45:37 [WARNING] nara.training — onnxmltools not installed, skipping ONNX export
+11:45:37 [INFO] nara.training — Metrics saved → ./models\ranker_lgbm_metrics.json
+11:45:37 [INFO] nara.ranker.lightgbm — 
+============================================================
+11:45:37 [INFO] nara.ranker.lightgbm — SUMMARY — Ranker LightGBM
+11:45:37 [INFO] nara.ranker.lightgbm —   Test Accuracy : 0.4758
+11:45:37 [INFO] nara.ranker.lightgbm —   Test F1       : 0.5329
+11:45:37 [INFO] nara.ranker.lightgbm —   Test NDCG@10  : 0.5108
+11:45:37 [INFO] nara.ranker.lightgbm —   Model saved   : ./models\ranker_lgbm.txt
+11:45:37 [INFO] nara.ranker.lightgbm — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> 
