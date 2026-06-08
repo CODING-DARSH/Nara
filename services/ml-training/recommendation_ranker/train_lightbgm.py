@@ -84,10 +84,12 @@ def load_and_prepare_data() -> tuple:
     feature_cols = num_cols + cat_cols + bin_cols
     X = df[feature_cols].fillna(0)
     y = df["action_score"]
-
+    interaction_ids = df["interaction_id"].reset_index(drop=True)
+    X = X.reset_index(drop=True)    
+    y = y.reset_index(drop=True)
     log.info(f"  Features: {len(feature_cols)} | Samples: {len(X):,}")
     log.info(f"  Class distribution: {y.value_counts().to_dict()}")
-    return X, y, feature_cols, encoder
+    return X, y, feature_cols, encoder, interaction_ids
 
 
 def train():
@@ -95,9 +97,10 @@ def train():
     log.info("Recommendation Ranker — LightGBM (Best)")
     log.info("=" * 60)
 
-    X, y, feature_cols, encoder = load_and_prepare_data()
+    X, y, feature_cols, encoder, interaction_ids = load_and_prepare_data()
     X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y)
-
+    ids_val  = interaction_ids.loc[X_val.index]
+    ids_test = interaction_ids.loc[X_test.index]
     # ── Train ─────────────────────────────────────────────────
     log.info("Training LightGBM...")
     params = {
@@ -127,13 +130,20 @@ def train():
     y_val_pred   = model.predict(X_val)
     y_val_prob   = model.predict_proba(X_val)
     val_metrics  = classification_metrics(y_val, y_val_pred, y_val_prob, label="VAL")
-    val_ndcg     = ranker_metrics(y_val.values, y_val_prob[:, 2], label="VAL")
+    rank_score_val = (y_val_prob[:, 1]+ 2 * y_val_prob[:, 2])
+    # val_ndcg     = ranker_metrics(y_val.values, y_val_prob[:, 2],rank_score_val,df_index=ids_val, label="VAL")
+    val_ndcg     = ranker_metrics(y_val.values,rank_score_val,df_index=ids_val, label="VAL")
     val_metrics.update(val_ndcg)
 
     y_test_pred  = model.predict(X_test)
     y_test_prob  = model.predict_proba(X_test)
     test_metrics = classification_metrics(y_test, y_test_pred, y_test_prob, label="TEST")
-    test_ndcg    = ranker_metrics(y_test.values, y_test_prob[:, 2], label="TEST")
+    rank_score_test = (
+    y_test_prob[:, 1]
+    + 2 * y_test_prob[:, 2]
+)
+    # test_ndcg    = ranker_metrics(y_test.values, y_test_prob[:, 2],rank_score_test,df_index=ids_test, label="TEST")
+    test_ndcg    = ranker_metrics(y_test.values, rank_score_test,df_index=ids_test, label="TEST")
     test_metrics.update(test_ndcg)
 
     # ── Feature importance — two types ────────────────────────
