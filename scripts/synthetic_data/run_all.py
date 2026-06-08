@@ -291,6 +291,7 @@ def run(n_users: int = 50000, output_dir: str = "data",
         t = time.time()
         generate_social_context_csv(
             meal_logs_csv=paths["meal_logs"],
+            users_csv=paths["users"],
             output_path=paths["social_context"],
         )
         timings["10. social_context"] = time.time() - t
