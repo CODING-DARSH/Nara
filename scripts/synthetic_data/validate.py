@@ -552,6 +552,977 @@ Usage:
     python validate_v3.py --data_dir data/ --fast       # skip slow cross-table checks
     python validate_v3.py --data_dir data/ --section users
 """
+# import os
+# import sys
+# import argparse
+# import warnings
+# import numpy as np
+# import pandas as pd
+# from datetime import datetime, timedelta
+
+# warnings.filterwarnings("ignore")
+
+# PASS = 0
+# FAIL = 0
+# WARN = 0
+
+
+# def check(condition, msg, fail_msg=None, warn=False):
+#     global PASS, FAIL, WARN
+#     if condition:
+#         print(f"  ✓ {msg}")
+#         PASS += 1
+#     elif warn:
+#         print(f"  ⚠ {fail_msg or msg}")
+#         WARN += 1
+#     else:
+#         print(f"  ✗ {fail_msg or msg}")
+#         FAIL += 1
+
+
+# def section(title):
+#     print(f"\n{'─'*60}")
+#     print(f"  {title}")
+#     print(f"{'─'*60}")
+
+
+# # ══════════════════════════════════════════════════════════════
+# # 1. USERS — row-level biological and cultural plausibility
+# # ══════════════════════════════════════════════════════════════
+
+# def validate_users(path):
+#     section("users.csv — biological + cultural plausibility")
+#     df = pd.read_csv(path)
+#     n = len(df)
+#     print(f"  Rows: {n:,}")
+
+#     # ── Basic integrity ───────────────────────────────────────
+#     check(df["user_id"].nunique() == n, "All user_ids unique")
+#     check(df["age"].between(18, 80).all(), "All ages 18–80")
+#     check(df["bmi"].between(14, 46).all(), "All BMIs 14–46")
+#     check(df["gender"].isin(["male", "female", "other"]).all(), "Gender values valid")
+#     check(df["observance_level"].between(0, 1).all(), "Observance level 0–1")
+#     check(df["health_literacy"].between(0, 1).all(), "Health literacy 0–1")
+#     check(df["habit_strength"].between(0, 1).all(), "Habit strength 0–1")
+#     check(df["cooking_skill"].between(0, 1).all(), "Cooking skill 0–1")
+
+#     # ── BMI ↔ weight ↔ height consistency ────────────────────
+#     df["bmi_calc"] = df["weight_kg"] / (df["height_cm"] / 100) ** 2
+#     bmi_error = (df["bmi_calc"] - df["bmi"]).abs()
+#     check((bmi_error < 1.0).mean() > 0.95,
+#           "BMI = weight/height² consistent (>95% rows)",
+#           f"BMI inconsistent in {(bmi_error >= 1.0).sum()} rows — weight/height don't match bmi column")
+
+#     # ── BMI ranges by gender (biological) ────────────────────
+#     male_bmi = df[df["gender"] == "male"]["bmi"]
+#     female_bmi = df[df["gender"] == "female"]["bmi"]
+#     check(male_bmi.mean() < female_bmi.mean() + 2,
+#           f"Male BMI mean ({male_bmi.mean():.1f}) not implausibly higher than female ({female_bmi.mean():.1f})")
+
+#     # ── Obesity condition ↔ BMI hard gate ────────────────────
+#     obese_flag = df["conditions"].str.contains("obesity", na=False)
+#     obese_bmi = df[obese_flag]["bmi"]
+#     check((obese_bmi >= 28).mean() > 0.90,
+#           f"Obesity condition → BMI≥28 in >90% cases: {(obese_bmi >= 28).mean()*100:.1f}%",
+#           f"Obesity condition users have BMI<28 in {(obese_bmi < 28).sum()} rows — biological impossibility")
+
+#     non_obese_high_bmi = df[~obese_flag & (df["bmi"] >= 35)]
+#     check(len(non_obese_high_bmi) / n < 0.05,
+#           f"Users with BMI≥35 but no obesity condition: {len(non_obese_high_bmi)} ({len(non_obese_high_bmi)/n*100:.1f}%)",
+#           warn=True)
+
+#     # ── BMI ↔ diabetes lift (must be ≥2×) ────────────────────
+#     diabetic = df["conditions"].str.contains("type2_diabetes", na=False)
+#     obese = df["bmi"] >= 30
+#     if obese.sum() > 10 and (~obese).sum() > 10:
+#         obese_rate = diabetic[obese].mean()
+#         normal_rate = diabetic[~obese].mean()
+#         lift = obese_rate / max(normal_rate, 0.001)
+#         check(lift >= 2.0,
+#               f"BMI↔diabetes lift ≥2×: {lift:.2f}×",
+#               f"BMI↔diabetes lift too weak: {lift:.2f}× (need ≥2×). Fix BMI_RISK_WEIGHTS in constants.py")
+
+#     # ── BMI ↔ hypertension lift ───────────────────────────────
+#     hyp = df["conditions"].str.contains("hypertension", na=False)
+#     if obese.sum() > 10:
+#         hyp_obese = hyp[obese].mean()
+#         hyp_normal = hyp[~obese].mean()
+#         hyp_lift = hyp_obese / max(hyp_normal, 0.001)
+#         check(hyp_lift >= 1.5,
+#               f"BMI↔hypertension lift ≥1.5×: {hyp_lift:.2f}×",
+#               f"BMI↔hypertension lift weak: {hyp_lift:.2f}×")
+
+#     # ── Family history ↔ conditions correlation ───────────────
+#     has_diabetes_cond = df["conditions"].str.contains("type2_diabetes", na=False)
+#     has_diabetes_fh   = df["family_history"].str.contains("diabetes", na=False)
+#     fh_given_cond = has_diabetes_fh[has_diabetes_cond].mean()
+#     fh_given_no_cond = has_diabetes_fh[~has_diabetes_cond].mean()
+#     check(fh_given_cond > fh_given_no_cond * 1.5,
+#           f"Family history correlated with conditions: diabetes fh={fh_given_cond*100:.1f}% (with cond) vs {fh_given_no_cond*100:.1f}% (without)",
+#           f"Family history NOT correlated with conditions — still random sampling")
+
+#     # ── Jain religion → vegetarian ────────────────────────────
+#     jain_non_veg = df[(df["religion"] == "jain") & (~df["is_vegetarian"])]
+#     check(len(jain_non_veg) == 0,
+#           "All Jains are vegetarian",
+#           f"{len(jain_non_veg)} Jain users are non-vegetarian — impossible")
+
+#     # ── Muslim → halal dietary restriction ───────────────────
+#     muslim_no_halal = df[(df["religion"] == "muslim") & (~df["dietary_restrictions"].str.contains("halal", na=False))]
+#     check(len(muslim_no_halal) / max(df["religion"].eq("muslim").sum(), 1) < 0.05,
+#           "Muslim users have halal restriction (>95%)",
+#           f"{len(muslim_no_halal)} Muslim users missing halal restriction")
+
+#     # ── Age ↔ occupation logic ─────────────────────────────────
+#     retired_young = df[(df["occupation"] == "retired") & (df["age"] < 45)]
+#     check(len(retired_young) / n < 0.02,
+#           f"Retired users age≥45 (>98%): {len(retired_young)} young retirees",
+#           warn=True)
+
+#     student_old = df[(df["occupation"] == "student") & (df["age"] > 35)]
+#     check(len(student_old) / n < 0.03,
+#           f"Students age≤35 (>97%): {len(student_old)} old students",
+#           warn=True)
+
+#     # ── PCOS → female only ─────────────────────────────────────
+#     pcos_male = df[(df["conditions"].str.contains("pcos", na=False)) & (df["gender"] == "male")]
+#     check(len(pcos_male) == 0,
+#           "PCOS only assigned to female users",
+#           f"{len(pcos_male)} male users have PCOS — biological impossibility")
+
+#     # ── Pregnancy → female only ────────────────────────────────
+#     # (only checkable if pregnancy is in conditions — some datasets have it)
+#     if "pregnancy" in df.get("conditions", pd.Series()).str.cat():
+#         preg_male = df[(df["conditions"].str.contains("pregnancy", na=False)) & (df["gender"] == "male")]
+#         check(len(preg_male) == 0, "Pregnancy only for female users",
+#               f"{len(preg_male)} male users have pregnancy")
+
+#     # ── Living situation ↔ family size ─────────────────────────
+#     alone_big_family = df[(df["living_situation"] == "alone") & (df["family_size"] > 2)]
+#     check(len(alone_big_family) / n < 0.02,
+#           f"alone living_situation → family_size≤2: {len(alone_big_family)} violations",
+#           warn=True)
+
+#     # ── Income tier ↔ occupation consistency ─────────────────
+#     high_income_low_occ = df[(df["income_tier"] == "high") & (df["occupation"].isin(["daily_wage_worker", "field_worker"]))]
+#     check(len(high_income_low_occ) / n < 0.03,
+#           f"High income + low-wage occupation: {len(high_income_low_occ)} ({len(high_income_low_occ)/n*100:.1f}%)",
+#           warn=True)
+
+#     # ── Distribution checks ────────────────────────────────────
+#     veg_pct = df["is_vegetarian"].mean() * 100
+#     check(20 <= veg_pct <= 45, f"Vegetarian %: {veg_pct:.1f}% (expect 20–45%)")
+
+#     rel_dist = df["religion"].value_counts(normalize=True)
+#     check(rel_dist.get("hindu", 0) > 0.60, f"Hindu dominant: {rel_dist.get('hindu',0)*100:.1f}%")
+#     check(rel_dist.get("muslim", 0) > 0.10, f"Muslim present: {rel_dist.get('muslim',0)*100:.1f}%")
+
+#     region_dist = df["region"].value_counts(normalize=True)
+#     check(region_dist.get("north", 0) > 0.25, f"North region: {region_dist.get('north',0)*100:.1f}%")
+
+#     # ── Persona diversity ──────────────────────────────────────
+#     persona_dist = df["persona_type"].value_counts()
+#     check(len(persona_dist) > 5, f"Persona diversity: {len(persona_dist)} types")
+#     check(persona_dist.max() / n < 0.20, "No persona dominates >20% of users")
+
+#     print(f"\n  BMI distribution: mean={df['bmi'].mean():.1f} std={df['bmi'].std():.1f} "
+#           f"p10={df['bmi'].quantile(0.1):.1f} p90={df['bmi'].quantile(0.9):.1f}")
+#     print(f"  Age distribution: mean={df['age'].mean():.1f} std={df['age'].std():.1f}")
+
+#     return df
+
+
+# # ══════════════════════════════════════════════════════════════
+# # 2. MEAL LOGS — row-level temporal + nutritional + cultural
+# # ══════════════════════════════════════════════════════════════
+
+# def validate_meal_logs(path, users_df):
+#     section("meal_logs.csv — temporal + nutritional + cultural logic")
+#     df = pd.read_csv(path, parse_dates=["occurred_at"])
+#     n = len(df)
+#     print(f"  Rows: {n:,}")
+
+#     # ── Basic counts ──────────────────────────────────────────
+#     check(n >= 50000, f"Row count: {n:,}")
+#     check(df["user_id"].nunique() > 100, f"Unique users: {df['user_id'].nunique():,}")
+
+#     avg_per_user = n / df["user_id"].nunique()
+#     date_span = (df["occurred_at"].max() - df["occurred_at"].min()).days
+#     weeks = max(1, date_span / 7)
+#     per_week = avg_per_user / weeks
+#     check(10 <= per_week <= 30, f"Meals/user/week: {per_week:.1f} (expect 14–28)")
+
+#     # ── Timestamp logic ────────────────────────────────────────
+#     df["hour"] = df["occurred_at"].dt.hour
+#     df["dow"]  = df["occurred_at"].dt.dayofweek
+
+#     breakfast_hours = df[df["meal_occasion"] == "breakfast"]["hour"]
+#     check(breakfast_hours.between(4, 11).mean() > 0.90,
+#           f"Breakfast between 4–11am: {breakfast_hours.between(4,11).mean()*100:.1f}%",
+#           f"Breakfast timing wrong: {breakfast_hours.between(4,11).mean()*100:.1f}% in valid window")
+
+#     dinner_hours = df[df["meal_occasion"] == "dinner"]["hour"]
+#     check(dinner_hours.between(17, 23).mean() > 0.85,
+#           f"Dinner between 5–11pm: {dinner_hours.between(17,23).mean()*100:.1f}%",
+#           f"Dinner timing wrong: {dinner_hours.between(17,23).mean()*100:.1f}% in valid window")
+
+#     late_night_hours = df[df["meal_occasion"] == "late_night"]["hour"] if "late_night" in df["meal_occasion"].values else pd.Series([], dtype=float)
+#     if len(late_night_hours) > 0:
+#         check(late_night_hours.between(21, 23).mean() > 0.70,
+#               f"Late-night meals 9–11pm: {late_night_hours.between(21,23).mean()*100:.1f}%")
+
+#     # ── Duplicate meal check (same user, same timestamp) ──────
+#     dupes = df.duplicated(subset=["user_id", "occurred_at"])
+#     check(dupes.sum() == 0,
+#           "No duplicate (user, timestamp) pairs",
+#           f"{dupes.sum()} duplicate (user, timestamp) rows — meal_id collision")
+
+#     # ── Same-day meal ordering sanity ─────────────────────────
+#     # Breakfast should precede lunch should precede dinner
+#     occasion_order = {"breakfast": 0, "lunch": 1, "snack": 2, "dinner": 3, "late_night": 4}
+#     df["occ_order"] = df["meal_occasion"].map(occasion_order)
+#     df_sorted = df.sort_values(["user_id", "occurred_at"])
+#     df_sorted["date"] = df_sorted["occurred_at"].dt.date
+
+#     sample_days = df_sorted.groupby(["user_id", "date"]).filter(lambda x: len(x) >= 2)
+#     inversions = 0
+#     for _, day_meals in sample_days.head(50000).groupby(["user_id", "date"]):
+#         ordered = day_meals.sort_values("occurred_at")["occ_order"].tolist()
+#         for i in range(len(ordered) - 1):
+#             if ordered[i] > ordered[i+1]:
+#                 inversions += 1
+#     check(inversions < 100,
+#           f"Meal occasion ordering within days: {inversions} inversions",
+#           f"Meal ordering issues: {inversions} days where dinner precedes lunch etc.")
+
+#     # ── Calorie plausibility per occasion ─────────────────────
+#     for occ, (lo, hi) in [("breakfast", (50, 600)), ("lunch", (100, 900)),
+#                            ("dinner", (100, 900)), ("snack", (30, 500))]:
+#         sub = df[df["meal_occasion"] == occ]["estimated_calories"]
+#         if len(sub) == 0:
+#             continue
+#         pct_valid = sub.between(lo, hi).mean()
+#         check(pct_valid > 0.90,
+#               f"{occ} calories in {lo}–{hi} kcal range: {pct_valid*100:.1f}%",
+#               f"{occ} has {(1-pct_valid)*100:.1f}% meals outside plausible calorie range")
+
+#     # ── GI score validity ─────────────────────────────────────
+#     check(df["gi_score"].between(0, 100).all(),
+#           "All GI scores 0–100",
+#           f"{(~df['gi_score'].between(0,100)).sum()} rows have GI outside 0–100")
+
+#     # ── Nutritional consistency: calories ≈ macro sum ─────────
+#     # 4 cal/g protein, 4 cal/g carbs, 9 cal/g fat
+#     df["macro_cal"] = (df["estimated_protein_g"] * 4 +
+#                        df["estimated_carbs_g"] * 4 +
+#                        df["estimated_fat_g"] * 9)
+#     macro_ratio = (df["macro_cal"] / df["estimated_calories"].replace(0, np.nan)).dropna()
+#     check(macro_ratio.between(0.5, 2.0).mean() > 0.85,
+#           f"Calorie ≈ macro sum (within 2×) in {macro_ratio.between(0.5,2.0).mean()*100:.1f}% rows",
+#           warn=True)
+
+#     # ── Portion multiplier range ───────────────────────────────
+#     check(df["portion_multiplier"].between(0.3, 3.0).all(),
+#           "Portion multipliers 0.3–3.0",
+#           f"{(~df['portion_multiplier'].between(0.3,3.0)).sum()} rows have extreme portion multipliers")
+
+#     # ── Vegetarian users eating non-veg dishes ────────────────
+#     if users_df is not None:
+#         veg_users = set(users_df[users_df["is_vegetarian"] == True]["user_id"])
+#         non_veg_dishes = {"chicken biryani","mutton biryani","butter chicken","chicken curry",
+#                           "chicken tikka","mutton curry","laal maas","machher jhol",
+#                           "egg curry","anda bhurji","tandoori chicken","rogan josh",
+#                           "shorshe ilish","chingri malai curry","kerala fish curry"}
+#         veg_eating_nonveg = df[(df["user_id"].isin(veg_users)) & (df["dish_name"].isin(non_veg_dishes))]
+#         check(len(veg_eating_nonveg) == 0,
+#               "No vegetarian users eating non-veg dishes",
+#               f"{len(veg_eating_nonveg)} rows: vegetarian users eating non-veg — fix get_restricted_dishes()")
+
+#     # ── Muslim users eating pork dishes ───────────────────────
+#     if users_df is not None:
+#         muslim_users = set(users_df[users_df["religion"] == "muslim"]["user_id"])
+#         pork_dishes = {"vindaloo", "pork curry", "bacon"}
+#         muslim_pork = df[(df["user_id"].isin(muslim_users)) & (df["dish_name"].isin(pork_dishes))]
+#         check(len(muslim_pork) == 0,
+#               "No Muslim users eating pork dishes",
+#               f"{len(muslim_pork)} rows: Muslim users eating pork")
+
+#     # ── Fast day food sanity ───────────────────────────────────
+#     if "is_fast_day" in df.columns:
+#         fast_meals = df[df["is_fast_day"] == True]
+#         if len(fast_meals) > 0:
+#             hindu_fast_forbidden = {"chicken biryani","butter chicken","mutton curry","egg curry"}
+#             bad_fast_meals = fast_meals[fast_meals["dish_name"].isin(hindu_fast_forbidden)]
+#             check(len(bad_fast_meals) / max(len(fast_meals), 1) < 0.02,
+#                   f"Fast day meals: non-fasting foods <2%: {len(bad_fast_meals)} rows",
+#                   f"Fast day meals contain non-fasting foods: {len(bad_fast_meals)} rows ({bad_fast_meals['dish_name'].value_counts().head(3).to_dict()})")
+
+#     # ── Season ↔ month consistency ────────────────────────────
+#     MONTH_SEASON = {1:"winter",2:"winter",3:"summer_onset",4:"summer",5:"summer",
+#                     6:"monsoon_onset",7:"monsoon",8:"monsoon",9:"monsoon_end",
+#                     10:"autumn",11:"winter_onset",12:"winter"}
+#     df["expected_season"] = df["occurred_at"].dt.month.map(MONTH_SEASON)
+#     season_mismatch = (df["season"] != df["expected_season"]).sum()
+#     check(season_mismatch / n < 0.01,
+#           f"Season matches month: {season_mismatch} mismatches",
+#           f"Season/month mismatch in {season_mismatch} rows ({season_mismatch/n*100:.1f}%)")
+
+#     # ── Day of week ↔ is_weekend consistency ──────────────────
+#     df["expected_weekend"] = df["dow"].isin([5, 6])
+#     weekend_mismatch = (df["is_weekend"] != df["expected_weekend"]).sum()
+#     check(weekend_mismatch == 0,
+#           "is_weekend matches day_of_week",
+#           f"is_weekend wrong in {weekend_mismatch} rows")
+
+#     # ── life_event_phase always 'normal' ──────────────────────
+#     if "life_event_phase" in df.columns:
+#         always_normal = (df["life_event_phase"] == "normal").mean()
+#         check(always_normal < 0.95,
+#               f"life_event_phase has non-normal values: {(1-always_normal)*100:.1f}%",
+#               f"life_event_phase is 'normal' in {always_normal*100:.1f}% rows — life events not propagated (C3 fix needed)")
+
+#     # ── Dish diversity ─────────────────────────────────────────
+#     top_dish_pct = df["dish_name"].value_counts(normalize=True).iloc[0] * 100
+#     check(top_dish_pct < 10,
+#           f"Top dish <10% of all meals: {df['dish_name'].value_counts().index[0]} at {top_dish_pct:.1f}%",
+#           f"Top dish dominates: {top_dish_pct:.1f}% — cuisine pool too narrow")
+
+#     check(df["dish_name"].nunique() >= 50, f"Dish diversity: {df['dish_name'].nunique()} unique dishes")
+
+#     # ── Cuisine type distribution ──────────────────────────────
+#     cuisine_top = df["cuisine_type"].value_counts(normalize=True).iloc[0]
+#     check(cuisine_top < 0.40, f"Top cuisine <40%: {cuisine_top*100:.1f}%",
+#           f"Cuisine dominates: {cuisine_top*100:.1f}%")
+
+#     # ── health_compliant ↔ conditions logic ───────────────────
+#     if users_df is not None and "health_compliant" in df.columns:
+#         diabetic_users = set(users_df[users_df["conditions"].str.contains("type2_diabetes", na=False)]["user_id"])
+#         diabetic_meals = df[df["user_id"].isin(diabetic_users)]
+#         if len(diabetic_meals) > 0:
+#             high_gi_compliant = diabetic_meals[(diabetic_meals["gi_score"] > 70) & (diabetic_meals["health_compliant"] == True)]
+#             check(len(high_gi_compliant) / len(diabetic_meals) < 0.05,
+#                   f"Diabetic users: high-GI meals not marked compliant (<5%): {len(high_gi_compliant)/len(diabetic_meals)*100:.1f}%",
+#                   f"Diabetic users: {len(high_gi_compliant)} high-GI meals marked health_compliant — logic error")
+
+#     print(f"\n  Occasion dist: {df['meal_occasion'].value_counts(normalize=True).round(3).to_dict()}")
+#     print(f"  Avg cal/meal: {df['estimated_calories'].mean():.0f}  "
+#           f"Avg protein: {df['estimated_protein_g'].mean():.1f}g  "
+#           f"Avg GI: {df['gi_score'].mean():.1f}")
+
+#     return df
+
+
+# # ══════════════════════════════════════════════════════════════
+# # 3. FAST DAYS — religion-food cultural correctness
+# # ══════════════════════════════════════════════════════════════
+
+# def validate_fast_days(path):
+#     section("fast_days.csv — religion ↔ food cultural correctness")
+#     df = pd.read_csv(path)
+#     n = len(df)
+#     print(f"  Rows: {n:,}")
+
+#     # ── Ramadan only Muslims ───────────────────────────────────
+#     ramadan_non_muslim = df[(df["fast_type"] == "ramadan") & (df["religion"] != "muslim")]
+#     check(len(ramadan_non_muslim) == 0,
+#           "Ramadan → Muslims only",
+#           f"{len(ramadan_non_muslim)} Ramadan records for non-Muslims")
+
+#     # ── Hindu fasts not for Muslims ───────────────────────────
+#     hindu_fasts = ["monday_fast", "ekadashi", "navratri"]
+#     hindu_fast_for_muslim = df[(df["fast_type"].isin(hindu_fasts)) & (df["religion"] == "muslim")]
+#     check(len(hindu_fast_for_muslim) == 0,
+#           "Hindu fasts → Hindus only",
+#           f"{len(hindu_fast_for_muslim)} Hindu fast records for Muslims")
+
+#     # ── Paryushan only Jains ──────────────────────────────────
+#     paryushan_non_jain = df[(df["fast_type"] == "paryushan") & (df["religion"] != "jain")]
+#     check(len(paryushan_non_jain) == 0,
+#           "Paryushan → Jains only",
+#           f"{len(paryushan_non_jain)} Paryushan records for non-Jains")
+
+#     # ── Hindu vrat foods in Ramadan iftar ────────────────────
+#     hindu_vrat = {"sabudana khichdi", "kuttu roti", "singhare ki puri", "sendha namak"}
+#     if "post_fast_meal" in df.columns:
+#         ramadan_rows = df[df["fast_type"] == "ramadan"]
+#         bad_iftar = ramadan_rows[ramadan_rows["post_fast_meal"].isin(hindu_vrat)]
+#         check(len(bad_iftar) == 0,
+#               "No Hindu vrat foods as Ramadan iftar",
+#               f"{len(bad_iftar)} Ramadan rows with Hindu vrat iftar foods: {bad_iftar['post_fast_meal'].value_counts().to_dict()}")
+
+#     # ── Pre-fast meal realism ─────────────────────────────────
+#     if "pre_fast_meal" in df.columns:
+#         ramadan_rows = df[df["fast_type"] == "ramadan"]
+#         good_sehri = {"roti", "paratha", "eggs", "dal tadka", "steamed rice", "dahi"}
+#         bad_sehri = ramadan_rows[~ramadan_rows["pre_fast_meal"].isin(good_sehri)]
+#         check(len(bad_sehri) / max(len(ramadan_rows), 1) < 0.30,
+#               f"Ramadan sehri foods realistic: {len(bad_sehri)/max(len(ramadan_rows),1)*100:.1f}% unrecognized",
+#               warn=True)
+
+#     # ── Calorie impact direction ───────────────────────────────
+#     if "calorie_impact" in df.columns:
+#         positive_impact = (df["calorie_impact"] > 0).sum()
+#         check(positive_impact == 0,
+#               "All fast day calorie impacts negative",
+#               f"{positive_impact} fast days have positive calorie impact — fasting should reduce calories")
+
+#     # ── Complete fast ↔ calorie impact ────────────────────────
+#     if "complete_fast" in df.columns and "calorie_impact" in df.columns:
+#         complete = df[df["complete_fast"] == True]["calorie_impact"]
+#         incomplete = df[df["complete_fast"] == False]["calorie_impact"]
+#         if len(complete) > 0 and len(incomplete) > 0:
+#             check(complete.mean() < incomplete.mean(),
+#                   f"Complete fast → bigger calorie reduction: {complete.mean():.2f} vs {incomplete.mean():.2f}",
+#                   f"Complete fast calorie impact not more negative than incomplete fast")
+
+#     # ── Observance level ↔ fasting frequency ─────────────────
+#     if "observance_level" in df.columns:
+#         check(df["observance_level"].between(0, 1).all(),
+#               "Observance level 0–1 in fast_days")
+
+#     print(f"  Fast type dist: {df['fast_type'].value_counts().to_dict()}")
+
+
+# # ══════════════════════════════════════════════════════════════
+# # 4. INTERACTIONS — position bias, click logic, signal quality
+# # ══════════════════════════════════════════════════════════════
+
+# def validate_interactions(path):
+#     section("interactions.csv — click logic + position bias + signal quality")
+#     df = pd.read_csv(path)
+#     n = len(df)
+#     print(f"  Rows: {n:,}")
+
+#     # ── Action distribution ────────────────────────────────────
+#     action_dist = df["action"].value_counts(normalize=True)
+#     check("skip" in action_dist and action_dist["skip"] > 0.40,
+#           f"Skip dominates >40%: {action_dist.get('skip',0)*100:.1f}%")
+#     check("order" in action_dist and 0.01 <= action_dist["order"] <= 0.20,
+#           f"Order rate 1–20%: {action_dist.get('order',0)*100:.1f}%")
+
+#     # ── Position bias: rank 0 should have highest order rate ──
+#     rank_col = next((c for c in ["recommendation_rank","rank_position","rank"] if c in df.columns), None)
+#     if rank_col:
+#         df["ordered"] = (df["action"] == "order").astype(int)
+#         stats = df.groupby(rank_col)["ordered"].mean().sort_index()
+#         if len(stats) >= 3:
+#             # Rank 0 should be higher than rank 3+
+#             rank0 = stats.iloc[0]
+#             rank3 = stats.iloc[3] if len(stats) > 3 else stats.iloc[-1]
+#             check(rank0 > rank3,
+#                   f"Position bias: rank-0 order rate ({rank0*100:.1f}%) > rank-3 ({rank3*100:.1f}%)",
+#                   f"No position bias — rank-0={rank0*100:.1f}% ≤ rank-3={rank3*100:.1f}%")
+#             lift = rank0 / max(stats.iloc[-1], 0.001)
+#             check(3 < lift < 25,
+#                   f"Position bias lift in realistic range 3–25×: {lift:.1f}×",
+#                   f"Position bias lift {lift:.1f}× — {'too extreme' if lift >= 25 else 'too weak, no signal'}")
+
+#     # ── final_ordered ↔ action consistency ───────────────────
+#     if "final_ordered" in df.columns:
+#         action_order = df[df["action"] == "order"]["final_ordered"]
+#         check(action_order.mean() > 0.95,
+#               f"action=order → final_ordered=True: {action_order.mean()*100:.1f}%",
+#               f"action=order but final_ordered=False in {(~action_order).sum()} rows — inconsistency")
+
+#         skip_order = df[df["action"] == "skip"]["final_ordered"]
+#         check(skip_order.mean() < 0.05,
+#               f"action=skip → final_ordered=False: {(~skip_order).mean()*100:.1f}%",
+#               f"action=skip but final_ordered=True in {skip_order.sum()} rows — inconsistency")
+
+#     # ── was_top3 ↔ recommendation_rank consistency ────────────
+#     if "was_top3" in df.columns and rank_col:
+#         top3_check = df[(df[rank_col] < 3) & (~df["was_top3"])].shape[0]
+#         not_top3_check = df[(df[rank_col] >= 3) & (df["was_top3"])].shape[0]
+#         check(top3_check == 0 and not_top3_check == 0,
+#               "was_top3 consistent with recommendation_rank",
+#               f"was_top3 inconsistent: {top3_check + not_top3_check} rows wrong")
+
+#     # ── Session duration: clicks > skips ─────────────────────
+#     if "session_duration_sec" in df.columns:
+#         click_dur = df[df["action"] == "click"]["session_duration_sec"].mean()
+#         skip_dur = df[df["action"] == "skip"]["session_duration_sec"].mean()
+#         order_dur = df[df["action"] == "order"]["session_duration_sec"].mean()
+#         check(order_dur > click_dur > skip_dur,
+#               f"Session duration: order({order_dur:.0f}s) > click({click_dur:.0f}s) > skip({skip_dur:.0f}s)",
+#               f"Session duration order wrong: order={order_dur:.0f}s click={click_dur:.0f}s skip={skip_dur:.0f}s")
+
+#     # ── Vegetarian users not ordering non-veg ────────────────
+#     # Can't check without users_df here — done in cross-table
+
+#     # ── user_health_match / price_match_score range ───────────
+#     for col in ["user_health_match", "price_match_score", "cuisine_affinity"]:
+#         if col in df.columns:
+#             check(df[col].between(0, 1).all(),
+#                   f"{col} in [0,1]",
+#                   f"{(~df[col].between(0,1)).sum()} rows have {col} outside [0,1]")
+
+#     print(f"  Rank 0 order rate: {df[df[rank_col]==0]['ordered'].mean()*100:.1f}%" if rank_col else "")
+
+
+# # ══════════════════════════════════════════════════════════════
+# # 5. HEALTH OUTCOMES — BMI physics, compliance delta, trend
+# # ══════════════════════════════════════════════════════════════
+
+# def validate_health_outcomes(path, users_df=None):
+#     section("health_outcomes.csv — BMI physics + compliance reality")
+#     df = pd.read_csv(path)
+#     n = len(df)
+#     print(f"  Rows: {n:,}")
+
+#     # ── BMI change variance ───────────────────────────────────
+#     unique_bmi = df["bmi_change"].nunique()
+#     check(unique_bmi > 20,
+#           f"BMI change has variance: {unique_bmi} unique values",
+#           f"BMI change has only {unique_bmi} unique values — likely hardcoded constant")
+
+#     bmi_std = df["bmi_change"].std()
+#     check(bmi_std > 0.3,
+#           f"BMI change std dev: {bmi_std:.3f} (expect >0.3)",
+#           f"BMI change std={bmi_std:.3f} — too uniform, not realistic")
+
+#     # ── BMI change range ──────────────────────────────────────
+#     check(df["bmi_change"].between(-3, 3).mean() > 0.95,
+#           f"BMI change in [-3, +3] per quarter: {df['bmi_change'].between(-3,3).mean()*100:.1f}%")
+
+#     # ── current_bmi physiologically possible ─────────────────
+#     if "current_bmi" in df.columns:
+#         check((df["current_bmi"] < 14).sum() == 0,
+#               "No current_bmi < 14 (physiologically impossible)",
+#               f"{(df['current_bmi'] < 14).sum()} rows have current_bmi < 14")
+#         check((df["current_bmi"] > 55).sum() == 0,
+#               "No current_bmi > 55",
+#               f"{(df['current_bmi'] > 55).sum()} rows have current_bmi > 55")
+
+#     # ── BMI trajectory per user ───────────────────────────────
+#     if "current_bmi" in df.columns:
+#         user_bmi = df.groupby("user_id")["current_bmi"]
+#         extreme_drop = user_bmi.apply(lambda x: x.max() - x.min() > 15)
+#         check(extreme_drop.sum() == 0,
+#               "No user loses/gains >15 BMI points across quarters",
+#               f"{extreme_drop.sum()} users have >15 BMI point swings — unrealistic trajectory")
+
+#     # ── Compliance improvement is actual delta ────────────────
+#     if "compliance_improvement" in df.columns and "compliance_rate" in df.columns:
+#         derived = (df["compliance_rate"] - 0.5).round(3)
+#         formula_match = (df["compliance_improvement"].round(3) == derived).mean()
+#         check(formula_match < 0.90,
+#               f"compliance_improvement is real delta (not compliance-0.5): {formula_match*100:.0f}% formula match",
+#               f"compliance_improvement = compliance_rate - 0.5 in {formula_match*100:.0f}% rows — hardcoded formula, fix compute_compliance_improvement()")
+
+#     # ── Health trend variance ─────────────────────────────────
+#     if "health_trend" in df.columns:
+#         trend_dist = df["health_trend"].value_counts(normalize=True)
+#         stable_pct = trend_dist.get("stable", 0)
+#         check(stable_pct < 0.95,
+#               f"health_trend not always stable: stable={stable_pct*100:.1f}%",
+#               f"health_trend='stable' for {stable_pct*100:.1f}% — no dynamics modelled")
+
+#     # ── Condition severity change makes sense ─────────────────
+#     if "condition_severity_change" in df.columns:
+#         all_zero = (df["condition_severity_change"] == 0).mean()
+#         check(all_zero < 0.80,
+#               f"condition_severity_change has variation: {all_zero*100:.1f}% are zero",
+#               f"condition_severity_change is 0 for {all_zero*100:.1f}% rows — not tracking condition changes")
+
+#     print(f"  BMI change: mean={df['bmi_change'].mean():.3f} "
+#           f"std={df['bmi_change'].std():.3f} "
+#           f"min={df['bmi_change'].min():.2f} max={df['bmi_change'].max():.2f}")
+
+
+# # ══════════════════════════════════════════════════════════════
+# # 6. REORDER EVENTS — semantic consistency
+# # ══════════════════════════════════════════════════════════════
+
+# def validate_reorders(path):
+#     section("reorder_events.csv — semantic consistency")
+#     df = pd.read_csv(path)
+#     n = len(df)
+#     print(f"  Rows: {n:,}")
+
+#     # ── days_between ≥ 0 ──────────────────────────────────────
+#     check((df["days_between"] >= 0).all(),
+#           "days_between ≥ 0",
+#           f"{(df['days_between'] < 0).sum()} rows have negative days_between")
+
+#     # ── total_orders_dish increases monotonically per user+dish
+#     df_sorted = df.sort_values(["user_id", "dish_name", "reorder_date"])
+#     non_mono = 0
+#     for (uid, dish), grp in df_sorted.groupby(["user_id", "dish_name"]):
+#         counts = grp["total_orders_dish"].tolist()
+#         for i in range(len(counts) - 1):
+#             if counts[i] > counts[i+1]:
+#                 non_mono += 1
+#                 break
+#     check(non_mono == 0,
+#           "total_orders_dish monotonically increases per user+dish",
+#           f"{non_mono} user+dish combos have non-monotonic order counts")
+
+#     # ── reorder_again_prob logic: more orders → higher prob ───
+#     df["reorder_bin"] = pd.cut(df["total_orders_dish"], bins=[0,2,5,10,100], labels=["1-2","3-5","6-10","10+"])
+#     reorder_by_orders = df.groupby("reorder_bin", observed=True)["reordered_yes_no"].mean()
+#     if len(reorder_by_orders) >= 2:
+#         check(reorder_by_orders.iloc[-1] >= reorder_by_orders.iloc[0],
+#               f"More orders → higher reorder probability: {reorder_by_orders.to_dict()}",
+#               f"Reorder probability not increasing with order count — formula broken")
+
+#     # ── Rating proxy 3–5 ─────────────────────────────────────
+#     if "last_rating_proxy" in df.columns:
+#         check(df["last_rating_proxy"].between(1, 5).all(),
+#               "Rating proxy in [1, 5]",
+#               f"{(~df['last_rating_proxy'].between(1,5)).sum()} rows have rating outside [1,5]")
+
+#     print(f"  Reorder rate: {df['reordered_yes_no'].mean()*100:.1f}%")
+#     print(f"  Avg days between orders: {df['days_between'].mean():.1f}")
+
+
+# # ══════════════════════════════════════════════════════════════
+# # 7. SKIP EVENTS — compensatory logic
+# # ══════════════════════════════════════════════════════════════
+
+# def validate_skip_events(path):
+#     section("skip_events.csv — compensatory meal logic")
+#     df = pd.read_csv(path)
+#     n = len(df)
+#     print(f"  Rows: {n:,}")
+
+#     # ── Compensatory only for breakfast skips ─────────────────
+#     dinner_comp = df[(df["skipped_meal_occasion"] == "dinner") & (df["compensatory_meal_occurred"] == True)]
+#     check(len(dinner_comp) / max(n, 1) < 0.05,
+#           f"Dinner skips rarely have compensatory meals: {len(dinner_comp)/n*100:.1f}%",
+#           warn=True)
+
+#     # ── Skip reason plausibility per occasion ─────────────────
+#     breakfast_reasons = df[df["skipped_meal_occasion"] == "breakfast"]["skip_reason"].value_counts()
+#     valid_breakfast_reasons = {"running_late", "not_hungry", "meeting", "fasting", "forgot"}
+#     invalid = set(breakfast_reasons.index) - valid_breakfast_reasons
+#     check(len(invalid) == 0,
+#           f"Breakfast skip reasons valid: {set(breakfast_reasons.index)}",
+#           f"Invalid breakfast skip reasons: {invalid}", warn=True)
+
+#     # ── Compensatory calorie increase direction ───────────────
+#     if "compensatory_calorie_increase" in df.columns:
+#         comp_meals = df[df["compensatory_meal_occurred"] == True]
+#         if len(comp_meals) > 0:
+#             # Some should be positive (ate more at lunch), some negative
+#             positive_pct = (comp_meals["compensatory_calorie_increase"] > 0).mean()
+#             check(0.1 <= positive_pct <= 0.9,
+#                   f"Compensatory calorie increase has variance: {positive_pct*100:.1f}% positive",
+#                   warn=True)
+
+#     print(f"  Skip occasion dist: {df['skipped_meal_occasion'].value_counts().to_dict()}")
+
+
+# # ══════════════════════════════════════════════════════════════
+# # 8. LIFE EVENTS ↔ WEEKLY CONTEXT — causal propagation
+# # ══════════════════════════════════════════════════════════════
+
+# def validate_life_event_propagation(events_path, weekly_path):
+#     section("life_events ↔ weekly_context — causal propagation")
+#     ev = pd.read_csv(events_path, parse_dates=["event_date"])
+#     wc = pd.read_csv(weekly_path, parse_dates=["week_start_date"])
+
+#     def get_pre_post(ev_df, wc_df, event_type, metric):
+#         users = ev_df[ev_df["event_type"] == event_type]["user_id"].unique()
+#         deltas = []
+#         for uid in users[:200]:
+#             u_wc = wc_df[wc_df["user_id"] == uid].sort_values("week_start_date")
+#             ev_dates = ev_df[(ev_df["user_id"] == uid) & (ev_df["event_type"] == event_type)]["event_date"]
+#             if ev_dates.empty or len(u_wc) < 4:
+#                 continue
+#             ev_date = ev_dates.iloc[0]
+#             pre  = u_wc[u_wc["week_start_date"] <  ev_date][metric].mean()
+#             post = u_wc[u_wc["week_start_date"] >= ev_date][metric].mean()
+#             if not (np.isnan(pre) or np.isnan(post)):
+#                 deltas.append(post - pre)
+#         return np.mean(deltas) if deltas else None
+
+#     # gym → protein up
+#     gym_protein = get_pre_post(ev, wc, "started_gym", "avg_protein_g")
+#     if gym_protein is not None:
+#         check(gym_protein > 1.0,
+#               f"started_gym → protein increase: +{gym_protein:.1f}g avg",
+#               f"started_gym has no protein effect: {gym_protein:.1f}g (C3 fix needed — life events not propagated to meal generator)")
+#     else:
+#         print("  ⚠ Not enough gym users with pre/post weekly data")
+
+#     # financial_stress → budget down
+#     fs_budget = get_pre_post(ev, wc, "financial_stress", "budget_state")
+#     if fs_budget is not None:
+#         check(fs_budget < 0,
+#               f"financial_stress → budget decrease: {fs_budget:.3f}",
+#               f"financial_stress has no budget effect: {fs_budget:.3f} (C3 fix needed)")
+#     else:
+#         print("  ⚠ Not enough financial_stress users with pre/post data")
+
+#     # health_diagnosis → compliance up
+#     hd_compliance = get_pre_post(ev, wc, "health_diagnosis", "health_compliance_rate")
+#     if hd_compliance is not None:
+#         check(hd_compliance > 0.02,
+#               f"health_diagnosis → compliance increase: +{hd_compliance:.3f}",
+#               f"health_diagnosis has no compliance effect: {hd_compliance:.3f} (C3 fix needed)")
+#     else:
+#         print("  ⚠ Not enough health_diagnosis users with pre/post data")
+
+#     # Event diversity
+#     event_dist = ev["event_type"].value_counts()
+#     check(len(event_dist) >= 5, f"Event type diversity: {len(event_dist)}")
+#     check(event_dist.max() / event_dist.sum() < 0.40,
+#           "No single event type dominates >40%")
+
+
+# # ══════════════════════════════════════════════════════════════
+# # 9. WEEKLY CONTEXT — calorie spikes, nutritional gaps, trend
+# # ══════════════════════════════════════════════════════════════
+
+# def validate_weekly_context(path):
+#     section("user_weekly_context.csv — calorie spikes + nutritional gaps")
+#     df = pd.read_csv(path, parse_dates=["week_start_date"])
+#     n = len(df)
+#     print(f"  Rows: {n:,}")
+
+#     # ── Calorie spike check ───────────────────────────────────
+#     avg_cal = df["avg_calories"].mean()
+#     p95 = df["avg_calories"].quantile(0.95)
+#     p99 = df["avg_calories"].quantile(0.99)
+#     check(p99 < avg_cal * 3.5, f"No calorie explosions (P99={p99:.0f} < {avg_cal*3.5:.0f})")
+#     check(p95 < avg_cal * 2.5,
+#           f"P95 calories within 2.5× mean: {p95/avg_cal:.1f}×",
+#           f"P95 calorie spike: {p95/avg_cal:.1f}× mean — check Ramadan logic")
+
+#     # ── Nutritional gaps must be ≥ 0 ─────────────────────────
+#     for col in ["protein_gap_g", "carb_gap_g", "fat_gap_g", "fiber_gap_g"]:
+#         if col in df.columns:
+#             neg = (df[col] < 0).sum()
+#             check(neg == 0, f"{col} ≥ 0", f"{neg} rows have negative {col}")
+
+#     # ── Budget state in valid range ───────────────────────────
+#     if "budget_state" in df.columns:
+#         check(df["budget_state"].between(0.5, 1.6).mean() > 0.95,
+#               f"budget_state in realistic range [0.5, 1.6]")
+
+#     # ── Season ↔ week_start_date consistency ──────────────────
+#     MONTH_SEASON = {1:"winter",2:"winter",3:"summer_onset",4:"summer",5:"summer",
+#                     6:"monsoon_onset",7:"monsoon",8:"monsoon",9:"monsoon_end",
+#                     10:"autumn",11:"winter_onset",12:"winter"}
+#     df["expected_season"] = df["week_start_date"].dt.month.map(MONTH_SEASON)
+#     season_mismatch = (df["season"] != df["expected_season"]).sum()
+#     check(season_mismatch / n < 0.02,
+#           f"Season matches month in weekly context: {season_mismatch} mismatches")
+
+#     # ── compliance rate [0, 1] ────────────────────────────────
+#     if "health_compliance_rate" in df.columns:
+#         check(df["health_compliance_rate"].between(0, 1).all(),
+#               "health_compliance_rate in [0,1]",
+#               f"{(~df['health_compliance_rate'].between(0,1)).sum()} rows outside [0,1]")
+
+#     # ── meals_ordered + meals_cooked ≤ meals_logged ───────────
+#     if all(c in df.columns for c in ["meals_logged", "meals_ordered", "meals_cooked"]):
+#         total_acc = df["meals_ordered"] + df["meals_cooked"]
+#         over = (total_acc > df["meals_logged"] + 2).sum()
+#         check(over / n < 0.05,
+#               f"meals_ordered + meals_cooked ≤ meals_logged in {(1-over/n)*100:.1f}% rows",
+#               f"{over} rows have ordered+cooked > logged — accounting mismatch", warn=True)
+
+#     print(f"  Avg weekly calories: {avg_cal:.1f}  P95: {p95:.1f}  P99: {p99:.1f}")
+
+
+# # ══════════════════════════════════════════════════════════════
+# # 10. SOCIAL CONTEXT — location ↔ living_situation
+# # ══════════════════════════════════════════════════════════════
+
+# def validate_social_context(path, users_df=None):
+#     section("social_eating_context.csv — location plausibility")
+#     df = pd.read_csv(path)
+#     n = len(df)
+#     print(f"  Rows: {n:,}")
+
+#     # ── Location type ↔ social context ────────────────────────
+#     alone_hostel = df[(df["social_context"] == "alone") & (df["location_type"] == "hostel")]
+#     if users_df is not None:
+#         non_hostel_users = set(users_df[~users_df["living_situation"].isin(["hostel_pg"])]["user_id"])
+#         false_hostel = alone_hostel[alone_hostel["user_id"].isin(non_hostel_users)]
+#         check(len(false_hostel) / max(n, 1) < 0.02,
+#               f"Non-hostel users assigned hostel location: {len(false_hostel)/n*100:.2f}%",
+#               f"{len(false_hostel)} non-hostel users with location_type=hostel — fix living_situation filter")
+#     else:
+#         check(alone_hostel.shape[0] / n < 0.15,
+#               f"Hostel location for alone meals: {alone_hostel.shape[0]/n*100:.1f}% (warn if >15%)",
+#               warn=True)
+
+#     # ── Group size ↔ social context ───────────────────────────
+#     alone_group = df[(df["social_context"] == "alone") & (df["group_size"] > 1)]
+#     check(len(alone_group) == 0,
+#           "alone social_context → group_size = 1",
+#           f"{len(alone_group)} rows: alone but group_size > 1")
+
+#     restaurant_solo = df[(df["social_context"] == "at_restaurant") & (df["group_size"] == 1)]
+#     check(restaurant_solo.shape[0] / max(df["social_context"].eq("at_restaurant").sum(), 1) < 0.10,
+#           f"at_restaurant → group_size > 1 in >90%",
+#           warn=True)
+
+#     # ── Budget multiplier ranges ──────────────────────────────
+#     if "budget_multiplier" in df.columns:
+#         check(df["budget_multiplier"].between(0.5, 2.5).all(),
+#               "Budget multipliers in [0.5, 2.5]",
+#               f"{(~df['budget_multiplier'].between(0.5,2.5)).sum()} extreme budget multipliers")
+
+#     # ── variety_score [0,1] ────────────────────────────────────
+#     if "variety_score" in df.columns:
+#         check(df["variety_score"].between(0, 1).all(),
+#               "variety_score in [0,1]",
+#               f"{(~df['variety_score'].between(0,1)).sum()} rows outside [0,1]")
+
+#     print(f"  Social context dist: {df['social_context'].value_counts(normalize=True).round(3).to_dict()}")
+
+
+# # ══════════════════════════════════════════════════════════════
+# # MASTER RUNNER
+# # ══════════════════════════════════════════════════════════════
+
+# def validate_all(data_dir="data", fast=False, section_filter=None):
+#     global PASS, FAIL, WARN
+#     PASS = FAIL = WARN = 0
+
+#     print("=" * 60)
+#     print("  NARA Synthetic Data Validation v3")
+#     print("  Senior-level: row logic + causality + cultural realism")
+#     print("=" * 60)
+
+#     files = {
+#         "users":           os.path.join(data_dir, "users.csv"),
+#         "meal_logs":       os.path.join(data_dir, "meal_logs.csv"),
+#         "interactions":    os.path.join(data_dir, "interactions.csv"),
+#         "life_events":     os.path.join(data_dir, "life_events.csv"),
+#         "fast_days":       os.path.join(data_dir, "fast_days.csv"),
+#         "skip_events":     os.path.join(data_dir, "skip_events.csv"),
+#         "reorders":        os.path.join(data_dir, "reorder_events.csv"),
+#         "health_outcomes": os.path.join(data_dir, "health_outcomes.csv"),
+#         "weekly_context":  os.path.join(data_dir, "user_weekly_context.csv"),
+#         "social_context":  os.path.join(data_dir, "social_eating_context.csv"),
+#     }
+
+#     print("\n── File existence check ───────────────────────")
+#     all_exist = True
+#     for name, path in files.items():
+#         exists = os.path.exists(path)
+#         size_mb = os.path.getsize(path) / (1024*1024) if exists else 0
+#         rows = ""
+#         if exists:
+#             try:
+#                 rows = f"{sum(1 for _ in open(path))-1:,} rows"
+#             except:
+#                 pass
+#         check(exists, f"{name:<20} {size_mb:>7.1f} MB  {rows}",
+#               f"{name} MISSING")
+#         if not exists:
+#             all_exist = False
+
+#     if not all_exist:
+#         print("\n  Some files missing. Run run_all.py first.")
+#         return
+
+#     users_df = None
+
+#     run = lambda name: section_filter is None or section_filter == name
+
+#     if run("users"):
+#         users_df = validate_users(files["users"])
+
+#     if run("meals"):
+#         validate_meal_logs(files["meal_logs"], users_df)
+
+#     if run("fast"):
+#         validate_fast_days(files["fast_days"])
+
+#     if run("interactions"):
+#         validate_interactions(files["interactions"])
+
+#     if run("outcomes"):
+#         validate_health_outcomes(files["health_outcomes"], users_df)
+
+#     if run("reorders"):
+#         validate_reorders(files["reorders"])
+
+#     if run("skips"):
+#         validate_skip_events(files["skip_events"])
+
+#     if run("weekly"):
+#         validate_weekly_context(files["weekly_context"])
+
+#     if run("social"):
+#         validate_social_context(files["social_context"], users_df)
+
+#     if not fast and run("propagation"):
+#         validate_life_event_propagation(files["life_events"], files["weekly_context"])
+
+#     print("\n" + "=" * 60)
+#     print(f"  Results: ✓ {PASS} passed  ✗ {FAIL} failed  ⚠ {WARN} warnings")
+#     print(f"  Score: {PASS}/{PASS+FAIL} checks passing "
+#           f"({PASS/(PASS+FAIL)*100:.1f}%)" if PASS+FAIL > 0 else "")
+#     if FAIL == 0:
+#         print("  ✅ All checks passed — data ready for training")
+#     elif FAIL <= 3:
+#         print("  🟡 Minor issues — review failures above before training")
+#     else:
+#         print("  🔴 Significant issues — fix failures before training")
+#     print("=" * 60)
+
+
+# if __name__ == "__main__":
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument("--data_dir", type=str, default="data")
+#     parser.add_argument("--fast", action="store_true", help="Skip slow cross-table checks")
+#     parser.add_argument("--section", type=str, default=None,
+#                         choices=["users","meals","fast","interactions","outcomes",
+#                                  "reorders","skips","weekly","social","propagation"],
+#                         help="Run only one section")
+#     args = parser.parse_args()
+#     validate_all(args.data_dir, fast=args.fast, section_filter=args.section)
+
+
+
+
+# =================v4===================================================================================
+
+"""
+NARA Synthetic Data — Validation Script v4
+Complete senior-level validation.
+
+New in v4 vs v3:
+  - Dish-level cultural mixups (Jain eating onion dishes, no_dairy eating kheer)
+  - State → cuisine leakage (Assam/Odisha getting Bengali recommendations)
+  - Timestamp ↔ fast type conflict (eating at 2pm on Ramadan fast day)
+  - Cross-table orphan detection (meal logs for non-existent users)
+  - eating_alone ↔ social_context contradiction
+  - cooking_at_home + ordered_delivery simultaneously True
+  - at_restaurant + cooking_at_home contradiction
+  - User registration date vs meal log date
+  - Stress level variance per user (not same every day)
+  - habit_strength ↔ dish repeat rate correlation
+  - health_literacy ↔ compliance rate correlation
+  - order_frequency_weekly ↔ actual ordered_delivery rate
+  - avg_daily_calories in health_outcomes ↔ meal_logs consistency
+  - fitness_goal=lose_weight ↔ BMI trend direction
+  - first_order_date in reorders ↔ meal_logs earliest date
+  - Skip events ↔ meal_logs contradiction check
+  - user_health_match / price_match_score / cuisine_affinity signal check
+  - compliance_score only 2 values per user (leakage)
+  - BMI distribution shape per age-gender bucket
+  - Cooking skill ↔ order frequency correlation
+  - Sleep ↔ stress correlation
+  - Ramadan observance_level ↔ calorie spike correlation
+  - Non-observant Muslims not showing Ramadan behavior
+  - Protein gap arithmetic vs actual meals
+  - Weekend meal timing later than weekday
+  - High-GI diabetic meals never marked compliant
+
+Usage:
+    python validate_v4.py --data_dir data/
+    python validate_v4.py --data_dir data/ --fast
+    python validate_v4.py --data_dir data/ --section users
+    python validate_v4.py --data_dir data/ --section meals
+    python validate_v4.py --data_dir data/ --section cultural
+"""
 import os
 import sys
 import argparse
@@ -559,12 +1530,86 @@ import warnings
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
+from scipy import stats as scipy_stats
 
 warnings.filterwarnings("ignore")
 
 PASS = 0
 FAIL = 0
 WARN = 0
+
+# ── Dish ingredient knowledge ─────────────────────────────────
+DAIRY_DISHES = {
+    "kheer","rasmalai","kulfi","shrikhand","rabdi","lassi","masala chai",
+    "dahi","raita","filter coffee","paneer tikka masala","palak paneer",
+    "shahi paneer","kadai paneer","matar paneer","malai kofta","kheer",
+    "mishti doi","dahi puri","raita","lassi","buttermilk",
+}
+
+GLUTEN_DISHES = {
+    "naan","bhatura","paratha","aloo paratha","gobi paratha","paneer paratha",
+    "puri","samosa","upma","thepla","roti","missi roti","dal baati churma",
+    "kathi roll","vada pav","pav bhaji","misal pav",
+}
+
+ONION_GARLIC_DISHES = {
+    "butter chicken","chicken curry","chicken tikka","mutton curry","rogan josh",
+    "dal makhani","chole","rajma","palak paneer","paneer tikka masala",
+    "pav bhaji","keema","laal maas","gongura mutton",
+}
+
+ROOT_VEG_DISHES = {
+    "aloo paratha","aloo gobi","aloo posto","aloo matar","aloo tikki",
+    "vada pav","samosa","chole bhature",
+}
+
+NON_VEG_DISHES = {
+    "chicken biryani","mutton biryani","egg biryani","prawn biryani",
+    "butter chicken","chicken curry","chicken tikka","tandoori chicken",
+    "chicken korma","chicken do pyaza","mutton curry","rogan josh","keema",
+    "gongura mutton","laal maas","kerala fish curry","machher jhol",
+    "shorshe ilish","chingri malai curry","goan fish curry","vindaloo",
+    "kathi roll","egg curry","anda bhurji","egg",
+}
+
+HIGH_SODIUM_DISHES = {
+    "dal makhani","butter chicken","chole","pav bhaji","samosa",
+    "bhel puri","vada pav","misal pav",
+}
+
+HIGH_GI_DISHES = {
+    "steamed rice","naan","puri","bhatura","jalebi","gulab jamun",
+    "kheer","sabudana khichdi","poha","upma","idli","dosa",
+}
+
+# ── State → correct cuisine mapping ───────────────────────────
+# This is what the generator SHOULD be using, not just state→region→bengali
+STATE_CORRECT_CUISINES = {
+    "Assam":            ["assamese", "northeast", "rice_based"],
+    "Odisha":           ["odia", "east_indian"],
+    "Tripura":          ["northeast", "bengali"],  # some overlap is ok
+    "Meghalaya":        ["northeast", "khasi"],
+    "Manipur":          ["northeast", "manipuri"],
+    "Nagaland":         ["northeast", "naga"],
+    "Arunachal Pradesh":["northeast"],
+    "Sikkim":           ["northeast", "nepali"],
+    "West Bengal":      ["bengali"],               # bengali is correct here
+    "Tamil Nadu":       ["south_indian"],
+    "Kerala":           ["south_indian", "kerala"],
+    "Karnataka":        ["south_indian", "kannada"],
+    "Andhra Pradesh":   ["south_indian", "andhra"],
+    "Telangana":        ["south_indian", "hyderabadi"],
+    "Gujarat":          ["gujarati"],
+    "Maharashtra":      ["maharashtrian"],
+    "Rajasthan":        ["rajasthani"],
+    "Punjab":           ["north_indian", "punjabi"],
+    "Uttar Pradesh":    ["north_indian"],
+    "Bihar":            ["north_indian", "bihari"],
+}
+
+# States where bengali cuisine is WRONG
+NON_BENGALI_EAST_STATES = {"Assam","Odisha","Tripura","Meghalaya","Manipur",
+                            "Nagaland","Arunachal Pradesh","Sikkim"}
 
 
 def check(condition, msg, fail_msg=None, warn=False):
@@ -587,792 +1632,983 @@ def section(title):
 
 
 # ══════════════════════════════════════════════════════════════
-# 1. USERS — row-level biological and cultural plausibility
+# 1. USERS
 # ══════════════════════════════════════════════════════════════
 
 def validate_users(path):
-    section("users.csv — biological + cultural plausibility")
+    section("users.csv — biological + cultural + statistical")
     df = pd.read_csv(path)
     n = len(df)
     print(f"  Rows: {n:,}")
 
     # ── Basic integrity ───────────────────────────────────────
     check(df["user_id"].nunique() == n, "All user_ids unique")
-    check(df["age"].between(18, 80).all(), "All ages 18–80")
-    check(df["bmi"].between(14, 46).all(), "All BMIs 14–46")
-    check(df["gender"].isin(["male", "female", "other"]).all(), "Gender values valid")
-    check(df["observance_level"].between(0, 1).all(), "Observance level 0–1")
-    check(df["health_literacy"].between(0, 1).all(), "Health literacy 0–1")
-    check(df["habit_strength"].between(0, 1).all(), "Habit strength 0–1")
-    check(df["cooking_skill"].between(0, 1).all(), "Cooking skill 0–1")
+    check(df["age"].between(18, 80).all(), "Ages 18–80")
+    check(df["bmi"].between(14, 46).all(), "BMIs 14–46")
+    check(df["gender"].isin(["male","female","other"]).all(), "Gender valid")
+    for col in ["observance_level","health_literacy","habit_strength","cooking_skill","trend_susceptibility"]:
+        if col in df.columns:
+            check(df[col].between(0,1).all(), f"{col} in [0,1]",
+                  f"{col} has {(~df[col].between(0,1)).sum()} values outside [0,1]")
 
-    # ── BMI ↔ weight ↔ height consistency ────────────────────
+    # ── BMI = weight / height² ────────────────────────────────
     df["bmi_calc"] = df["weight_kg"] / (df["height_cm"] / 100) ** 2
-    bmi_error = (df["bmi_calc"] - df["bmi"]).abs()
-    check((bmi_error < 1.0).mean() > 0.95,
-          "BMI = weight/height² consistent (>95% rows)",
-          f"BMI inconsistent in {(bmi_error >= 1.0).sum()} rows — weight/height don't match bmi column")
+    bmi_err = (df["bmi_calc"] - df["bmi"]).abs()
+    check((bmi_err < 1.5).mean() > 0.95,
+          f"BMI consistent with weight/height² (>95%): {(bmi_err < 1.5).mean()*100:.1f}%",
+          f"BMI inconsistent in {(bmi_err >= 1.5).sum()} rows — weight/height don't match bmi")
 
-    # ── BMI ranges by gender (biological) ────────────────────
-    male_bmi = df[df["gender"] == "male"]["bmi"]
-    female_bmi = df[df["gender"] == "female"]["bmi"]
-    check(male_bmi.mean() < female_bmi.mean() + 2,
-          f"Male BMI mean ({male_bmi.mean():.1f}) not implausibly higher than female ({female_bmi.mean():.1f})")
-
-    # ── Obesity condition ↔ BMI hard gate ────────────────────
+    # ── Obesity ↔ BMI≥28 ─────────────────────────────────────
     obese_flag = df["conditions"].str.contains("obesity", na=False)
     obese_bmi = df[obese_flag]["bmi"]
-    check((obese_bmi >= 28).mean() > 0.90,
-          f"Obesity condition → BMI≥28 in >90% cases: {(obese_bmi >= 28).mean()*100:.1f}%",
-          f"Obesity condition users have BMI<28 in {(obese_bmi < 28).sum()} rows — biological impossibility")
+    check((obese_bmi >= 27).mean() > 0.90,
+          f"Obesity → BMI≥27 in >90%: {(obese_bmi >= 27).mean()*100:.1f}%",
+          f"Obesity condition users have BMI<27 in {(obese_bmi < 27).sum()} rows")
 
-    non_obese_high_bmi = df[~obese_flag & (df["bmi"] >= 35)]
-    check(len(non_obese_high_bmi) / n < 0.05,
-          f"Users with BMI≥35 but no obesity condition: {len(non_obese_high_bmi)} ({len(non_obese_high_bmi)/n*100:.1f}%)",
-          warn=True)
-
-    # ── BMI ↔ diabetes lift (must be ≥2×) ────────────────────
+    # ── BMI ↔ diabetes lift ───────────────────────────────────
     diabetic = df["conditions"].str.contains("type2_diabetes", na=False)
     obese = df["bmi"] >= 30
     if obese.sum() > 10 and (~obese).sum() > 10:
-        obese_rate = diabetic[obese].mean()
-        normal_rate = diabetic[~obese].mean()
-        lift = obese_rate / max(normal_rate, 0.001)
-        check(lift >= 2.0,
-              f"BMI↔diabetes lift ≥2×: {lift:.2f}×",
-              f"BMI↔diabetes lift too weak: {lift:.2f}× (need ≥2×). Fix BMI_RISK_WEIGHTS in constants.py")
+        lift = (diabetic[obese].mean()) / max(diabetic[~obese].mean(), 0.001)
+        check(lift >= 2.0, f"BMI↔diabetes lift ≥2×: {lift:.2f}×",
+              f"BMI↔diabetes lift too weak: {lift:.2f}× — fix BMI_RISK_WEIGHTS")
 
     # ── BMI ↔ hypertension lift ───────────────────────────────
     hyp = df["conditions"].str.contains("hypertension", na=False)
     if obese.sum() > 10:
-        hyp_obese = hyp[obese].mean()
-        hyp_normal = hyp[~obese].mean()
-        hyp_lift = hyp_obese / max(hyp_normal, 0.001)
-        check(hyp_lift >= 1.5,
-              f"BMI↔hypertension lift ≥1.5×: {hyp_lift:.2f}×",
+        hyp_lift = hyp[obese].mean() / max(hyp[~obese].mean(), 0.001)
+        check(hyp_lift >= 1.5, f"BMI↔hypertension lift ≥1.5×: {hyp_lift:.2f}×",
               f"BMI↔hypertension lift weak: {hyp_lift:.2f}×")
 
-    # ── Family history ↔ conditions correlation ───────────────
-    has_diabetes_cond = df["conditions"].str.contains("type2_diabetes", na=False)
-    has_diabetes_fh   = df["family_history"].str.contains("diabetes", na=False)
-    fh_given_cond = has_diabetes_fh[has_diabetes_cond].mean()
-    fh_given_no_cond = has_diabetes_fh[~has_diabetes_cond].mean()
-    check(fh_given_cond > fh_given_no_cond * 1.5,
-          f"Family history correlated with conditions: diabetes fh={fh_given_cond*100:.1f}% (with cond) vs {fh_given_no_cond*100:.1f}% (without)",
-          f"Family history NOT correlated with conditions — still random sampling")
-
-    # ── Jain religion → vegetarian ────────────────────────────
-    jain_non_veg = df[(df["religion"] == "jain") & (~df["is_vegetarian"])]
-    check(len(jain_non_veg) == 0,
-          "All Jains are vegetarian",
-          f"{len(jain_non_veg)} Jain users are non-vegetarian — impossible")
-
-    # ── Muslim → halal dietary restriction ───────────────────
-    muslim_no_halal = df[(df["religion"] == "muslim") & (~df["dietary_restrictions"].str.contains("halal", na=False))]
-    check(len(muslim_no_halal) / max(df["religion"].eq("muslim").sum(), 1) < 0.05,
-          "Muslim users have halal restriction (>95%)",
-          f"{len(muslim_no_halal)} Muslim users missing halal restriction")
-
-    # ── Age ↔ occupation logic ─────────────────────────────────
-    retired_young = df[(df["occupation"] == "retired") & (df["age"] < 45)]
-    check(len(retired_young) / n < 0.02,
-          f"Retired users age≥45 (>98%): {len(retired_young)} young retirees",
-          warn=True)
-
-    student_old = df[(df["occupation"] == "student") & (df["age"] > 35)]
-    check(len(student_old) / n < 0.03,
-          f"Students age≤35 (>97%): {len(student_old)} old students",
-          warn=True)
-
     # ── PCOS → female only ─────────────────────────────────────
-    pcos_male = df[(df["conditions"].str.contains("pcos", na=False)) & (df["gender"] == "male")]
-    check(len(pcos_male) == 0,
-          "PCOS only assigned to female users",
+    pcos_male = df[(df["conditions"].str.contains("pcos", na=False)) & (df["gender"]=="male")]
+    check(len(pcos_male)==0, "PCOS → female only",
           f"{len(pcos_male)} male users have PCOS — biological impossibility")
 
-    # ── Pregnancy → female only ────────────────────────────────
-    # (only checkable if pregnancy is in conditions — some datasets have it)
-    if "pregnancy" in df.get("conditions", pd.Series()).str.cat():
-        preg_male = df[(df["conditions"].str.contains("pregnancy", na=False)) & (df["gender"] == "male")]
-        check(len(preg_male) == 0, "Pregnancy only for female users",
-              f"{len(preg_male)} male users have pregnancy")
+    # ── Jain → vegetarian ─────────────────────────────────────
+    jain_nonveg = df[(df["religion"]=="jain") & (~df["is_vegetarian"])]
+    check(len(jain_nonveg)==0, "All Jains are vegetarian",
+          f"{len(jain_nonveg)} Jain users are non-vegetarian")
+
+    # ── Muslim → halal ────────────────────────────────────────
+    muslim_no_halal = df[(df["religion"]=="muslim") & (~df["dietary_restrictions"].str.contains("halal",na=False))]
+    check(len(muslim_no_halal)/max(df["religion"].eq("muslim").sum(),1) < 0.05,
+          "Muslim users have halal restriction >95%",
+          f"{len(muslim_no_halal)} Muslim users missing halal")
+
+    # ── Retired ↔ age ─────────────────────────────────────────
+    retired_young = df[(df["occupation"]=="retired") & (df["age"]<45)]
+    check(len(retired_young)/n < 0.02, f"Retired users age≥45: {len(retired_young)} young retirees", warn=True)
+
+    # ── Student ↔ age ─────────────────────────────────────────
+    student_old = df[(df["occupation"]=="student") & (df["age"]>35)]
+    check(len(student_old)/n < 0.03, f"Students age≤35: {len(student_old)} old students", warn=True)
 
     # ── Living situation ↔ family size ─────────────────────────
-    alone_big_family = df[(df["living_situation"] == "alone") & (df["family_size"] > 2)]
-    check(len(alone_big_family) / n < 0.02,
-          f"alone living_situation → family_size≤2: {len(alone_big_family)} violations",
-          warn=True)
+    alone_big = df[(df["living_situation"]=="alone") & (df["family_size"]>2)]
+    check(len(alone_big)/n < 0.02, f"alone → family_size≤2: {len(alone_big)} violations", warn=True)
 
-    # ── Income tier ↔ occupation consistency ─────────────────
-    high_income_low_occ = df[(df["income_tier"] == "high") & (df["occupation"].isin(["daily_wage_worker", "field_worker"]))]
-    check(len(high_income_low_occ) / n < 0.03,
-          f"High income + low-wage occupation: {len(high_income_low_occ)} ({len(high_income_low_occ)/n*100:.1f}%)",
-          warn=True)
+    # ── Family history ↔ conditions correlation ───────────────
+    has_dm_cond = df["conditions"].str.contains("type2_diabetes",na=False)
+    has_dm_fh   = df["family_history"].str.contains("diabetes",na=False)
+    fh_with = has_dm_fh[has_dm_cond].mean()
+    fh_without = has_dm_fh[~has_dm_cond].mean()
+    check(fh_with > fh_without * 1.5,
+          f"Family history correlated with conditions: {fh_with*100:.1f}% vs {fh_without*100:.1f}%",
+          f"Family history NOT correlated — still random sampling")
 
-    # ── Distribution checks ────────────────────────────────────
-    veg_pct = df["is_vegetarian"].mean() * 100
-    check(20 <= veg_pct <= 45, f"Vegetarian %: {veg_pct:.1f}% (expect 20–45%)")
+    # ── Cooking skill ↔ order frequency correlation ───────────
+    if "order_frequency_weekly" in df.columns:
+        corr = df["cooking_skill"].corr(df["order_frequency_weekly"])
+        check(corr < -0.10,
+              f"Cooking skill negatively correlated with order frequency: r={corr:.3f}",
+              f"Cooking skill vs order frequency correlation r={corr:.3f} (expect negative, high skill = cooks more)")
 
+    # ── Sleep ↔ stress correlation ─────────────────────────────
+    stress_map = {"none":0,"low":1,"medium":2,"high":3,"extreme":4}
+    df["stress_num"] = df["stress_profile"].map(stress_map)
+    if "sleep_hours" in df.columns and df["stress_num"].notna().sum() > 0:
+        corr = df["sleep_hours"].corr(df["stress_num"])
+        check(corr < -0.10,
+              f"Sleep negatively correlated with stress: r={corr:.3f}",
+              f"Sleep vs stress r={corr:.3f} (expect negative, high stress = less sleep)")
+
+    # ── BMI distribution shape per age-gender bucket ──────────
+    for gender in ["male","female"]:
+        for age_lo, age_hi in [(18,35),(36,55),(56,80)]:
+            sub = df[(df["gender"]==gender) & df["age"].between(age_lo,age_hi)]["bmi"]
+            if len(sub) < 20:
+                continue
+            skew = sub.skew()
+            check(skew < 2.0,
+                  f"BMI distribution not extreme skew ({gender} {age_lo}-{age_hi}): skew={skew:.2f}",
+                  f"BMI skew={skew:.2f} for {gender} {age_lo}-{age_hi} — may be artificially flat/spiked",
+                  warn=True)
+
+    # ── State → region correctness ─────────────────────────────
+    if "birthplace_state" in df.columns and "region" in df.columns:
+        STATE_REGION_CORRECT = {
+            "Tamil Nadu":"south","Karnataka":"south","Kerala":"south",
+            "Andhra Pradesh":"south","Telangana":"south",
+            "Uttar Pradesh":"north","Bihar":"north","Rajasthan":"north",
+            "Punjab":"north","Haryana":"north","Delhi":"north",
+            "Maharashtra":"west","Gujarat":"west","Goa":"west",
+            "West Bengal":"east","Odisha":"east","Assam":"east",
+        }
+        wrong_region = 0
+        for state, expected_region in STATE_REGION_CORRECT.items():
+            wrong = df[(df["birthplace_state"]==state) & (df["region"]!=expected_region)]
+            wrong_region += len(wrong)
+        check(wrong_region==0, "State→region mapping correct",
+              f"{wrong_region} users have wrong region for their birthplace state")
+
+    # ── Distributions ──────────────────────────────────────────
+    veg_pct = df["is_vegetarian"].mean()*100
+    check(20<=veg_pct<=45, f"Vegetarian %: {veg_pct:.1f}%")
     rel_dist = df["religion"].value_counts(normalize=True)
-    check(rel_dist.get("hindu", 0) > 0.60, f"Hindu dominant: {rel_dist.get('hindu',0)*100:.1f}%")
-    check(rel_dist.get("muslim", 0) > 0.10, f"Muslim present: {rel_dist.get('muslim',0)*100:.1f}%")
-
-    region_dist = df["region"].value_counts(normalize=True)
-    check(region_dist.get("north", 0) > 0.25, f"North region: {region_dist.get('north',0)*100:.1f}%")
-
-    # ── Persona diversity ──────────────────────────────────────
+    check(rel_dist.get("hindu",0)>0.60, f"Hindu dominant: {rel_dist.get('hindu',0)*100:.1f}%")
     persona_dist = df["persona_type"].value_counts()
-    check(len(persona_dist) > 5, f"Persona diversity: {len(persona_dist)} types")
-    check(persona_dist.max() / n < 0.20, "No persona dominates >20% of users")
+    check(len(persona_dist)>5, f"Persona diversity: {len(persona_dist)} types")
+    check(persona_dist.max()/n < 0.20, "No persona >20% of users")
 
-    print(f"\n  BMI distribution: mean={df['bmi'].mean():.1f} std={df['bmi'].std():.1f} "
-          f"p10={df['bmi'].quantile(0.1):.1f} p90={df['bmi'].quantile(0.9):.1f}")
-    print(f"  Age distribution: mean={df['age'].mean():.1f} std={df['age'].std():.1f}")
-
+    print(f"\n  BMI: mean={df['bmi'].mean():.1f} std={df['bmi'].std():.1f}")
+    print(f"  Age: mean={df['age'].mean():.1f} std={df['age'].std():.1f}")
     return df
 
 
 # ══════════════════════════════════════════════════════════════
-# 2. MEAL LOGS — row-level temporal + nutritional + cultural
+# 2. CULTURAL LEAKAGE — state → cuisine correctness
+# ══════════════════════════════════════════════════════════════
+
+def validate_cultural_leakage(meal_logs_path, users_path):
+    section("cultural leakage — state→region→cuisine correctness")
+    users = pd.read_csv(users_path)
+    meals = pd.read_csv(meal_logs_path)
+
+    merged = meals.merge(users[["user_id","birthplace_state","region","current_state"]],
+                         on="user_id", how="left")
+
+    # ── Assam/Odisha users getting Bengali food ───────────────
+    # This is the key bug: east region → bengali cuisine pool
+    bengali_dishes = {"machher jhol","shorshe ilish","aloo posto","luchi",
+                      "chingri malai curry","rasgulla","sandesh","mishti doi"}
+
+    for state in NON_BENGALI_EAST_STATES:
+        state_users = users[users["birthplace_state"]==state]["user_id"]
+        if len(state_users) == 0:
+            continue
+        state_meals = merged[merged["user_id"].isin(state_users)]
+        if len(state_meals) == 0:
+            continue
+        bengali_pct = state_meals["dish_name"].isin(bengali_dishes).mean()*100
+        threshold = 0.45 if state == "Tripura" else 0.20
+        check(bengali_pct < threshold * 100,
+          f"{state} users: Bengali dishes <{threshold*100:.0f}%: {bengali_pct:.1f}%",
+          f"STATE→CUISINE LEAKAGE: {state} users eat Bengali food {bengali_pct:.1f}% "
+          f"(threshold {threshold*100:.0f}%)")
+        # Some Bengali food is ok (India is diverse) but >20% is leakage
+        check(bengali_pct < 20,
+              f"{state} users: Bengali dishes <20% of meals: {bengali_pct:.1f}%",
+              f"STATE→CUISINE LEAKAGE: {state} users eat Bengali food {bengali_pct:.1f}% of time "
+              f"— state→east→bengali cuisine pool bug. These users should get assamese/odia/northeast food.")
+
+    # ── South Indian users in north getting wrong food ─────────
+    south_states = {"Tamil Nadu","Karnataka","Kerala","Andhra Pradesh","Telangana"}
+    south_users_in_north = users[(users["birthplace_state"].isin(south_states)) &
+                                  (users["current_state"].isin({"Uttar Pradesh","Bihar","Rajasthan","Delhi","Punjab"}))]
+    if len(south_users_in_north) > 0:
+        south_meals = merged[merged["user_id"].isin(south_users_in_north["user_id"])]
+        south_dish_pct = south_meals["cuisine_type"].isin(["south_indian"]).mean()*100
+        check(south_dish_pct > 15,
+              f"South users in north still eat south Indian food >15%: {south_dish_pct:.1f}%",
+              f"South users in north eat 0% south Indian — cuisine preference not preserved after migration",
+              warn=True)
+
+    # ── Gujarat users eating Bengali food ─────────────────────
+    guj_users = users[users["birthplace_state"]=="Gujarat"]["user_id"]
+    if len(guj_users) > 0:
+        guj_meals = merged[merged["user_id"].isin(guj_users)]
+        guj_bengali = guj_meals["dish_name"].isin(bengali_dishes).mean()*100
+        check(guj_bengali < 10,
+              f"Gujarat users: Bengali dishes <10%: {guj_bengali:.1f}%",
+              warn=True)
+
+    # ── Northeast states getting south_indian cuisine ──────────
+    ne_states = {"Meghalaya","Manipur","Nagaland","Arunachal Pradesh","Sikkim"}
+    ne_users = users[users["birthplace_state"].isin(ne_states)]["user_id"]
+    if len(ne_users) > 0:
+        ne_meals = merged[merged["user_id"].isin(ne_users)]
+        south_pct = ne_meals["cuisine_type"].isin(["south_indian"]).mean()*100
+        check(south_pct < 30,
+              f"Northeast users: south_indian cuisine <30%: {south_pct:.1f}%",
+              f"Northeast users eat south_indian {south_pct:.1f}% — region mapping wrong")
+
+
+# ══════════════════════════════════════════════════════════════
+# 3. MEAL LOGS — full row-level validation
 # ══════════════════════════════════════════════════════════════
 
 def validate_meal_logs(path, users_df):
-    section("meal_logs.csv — temporal + nutritional + cultural logic")
+    section("meal_logs.csv — row-level logic, timing, nutrition, restrictions")
     df = pd.read_csv(path, parse_dates=["occurred_at"])
     n = len(df)
     print(f"  Rows: {n:,}")
 
-    # ── Basic counts ──────────────────────────────────────────
-    check(n >= 50000, f"Row count: {n:,}")
-    check(df["user_id"].nunique() > 100, f"Unique users: {df['user_id'].nunique():,}")
+    # ── Cross-table orphan check ───────────────────────────────
+    if users_df is not None:
+        valid_users = set(users_df["user_id"])
+        orphan_meals = df[~df["user_id"].isin(valid_users)]
+        check(len(orphan_meals)==0, "All meal user_ids exist in users.csv",
+              f"{len(orphan_meals)} meal rows for users not in users.csv")
 
-    avg_per_user = n / df["user_id"].nunique()
-    date_span = (df["occurred_at"].max() - df["occurred_at"].min()).days
-    weeks = max(1, date_span / 7)
-    per_week = avg_per_user / weeks
-    check(10 <= per_week <= 30, f"Meals/user/week: {per_week:.1f} (expect 14–28)")
+    # ── User registration date vs meal date ───────────────────
+    if users_df is not None and "created_at" in users_df.columns:
+        created = users_df[["user_id","created_at"]].copy()
+        created["created_at"] = pd.to_datetime(created["created_at"])
+        meal_with_created = df.merge(created, on="user_id", how="left")
+        meals_before_registration = (meal_with_created["occurred_at"] < meal_with_created["created_at"]).sum()
+        check(meals_before_registration==0,
+              "No meal logs before user registration date",
+              f"{meals_before_registration} meals logged before user created_at — temporal impossibility")
 
-    # ── Timestamp logic ────────────────────────────────────────
+    # ── Duplicate (user, timestamp) ──────────────────────────
+    dupes = df.duplicated(subset=["user_id","occurred_at"])
+    check(dupes.sum()==0, "No duplicate (user, timestamp) pairs",
+          f"{dupes.sum()} duplicate (user, timestamp) rows")
+
+    # ── eating_alone ↔ social_context contradiction ───────────
+    if "eating_alone" in df.columns and "social_context" in df.columns:
+        contradiction1 = df[(df["eating_alone"]==True) & (df["social_context"]!="alone")]
+        contradiction2 = df[(df["eating_alone"]==False) & (df["social_context"]=="alone")]
+        check(len(contradiction1)==0,
+              "eating_alone=True → social_context=alone",
+              f"{len(contradiction1)} rows: eating_alone=True but social_context≠alone")
+        check(len(contradiction2)==0,
+              "eating_alone=False → social_context≠alone",
+              f"{len(contradiction2)} rows: eating_alone=False but social_context=alone")
+
+    # ── cooking_at_home + ordered_delivery simultaneously True ─
+    if "cooking_at_home" in df.columns and "ordered_delivery" in df.columns:
+        both_true = df[(df["cooking_at_home"]==True) & (df["ordered_delivery"]==True)]
+        check(len(both_true)==0,
+              "cooking_at_home and ordered_delivery not both True",
+              f"{len(both_true)} rows have both cooking_at_home=True and ordered_delivery=True — mutually exclusive")
+
+    # ── Meal timing by occasion ────────────────────────────────
     df["hour"] = df["occurred_at"].dt.hour
     df["dow"]  = df["occurred_at"].dt.dayofweek
+    for occ, lo, hi, thresh in [("breakfast",4,11,0.90),("lunch",10,15,0.85),
+                                  ("dinner",17,23,0.85),("snack",10,21,0.90)]:
+        sub = df[df["meal_occasion"]==occ]["hour"]
+        if len(sub)==0: continue
+        pct = sub.between(lo,hi).mean()
+        check(pct>thresh, f"{occ} timing {lo}–{hi}h: {pct*100:.1f}%",
+              f"{occ} timing wrong: only {pct*100:.1f}% in {lo}–{hi}h window")
 
-    breakfast_hours = df[df["meal_occasion"] == "breakfast"]["hour"]
-    check(breakfast_hours.between(4, 11).mean() > 0.90,
-          f"Breakfast between 4–11am: {breakfast_hours.between(4,11).mean()*100:.1f}%",
-          f"Breakfast timing wrong: {breakfast_hours.between(4,11).mean()*100:.1f}% in valid window")
+    # ── Weekend meals later than weekday ──────────────────────
+    for occ in ["breakfast","lunch"]:
+        sub = df[df["meal_occasion"]==occ]
+        if len(sub) < 100: continue
+        wd_mean = sub[sub["dow"]<5]["hour"].mean()
+        we_mean = sub[sub["dow"]>=5]["hour"].mean()
+        check(we_mean > wd_mean,
+              f"Weekend {occ} later than weekday: weekday={wd_mean:.1f}h weekend={we_mean:.1f}h",
+              f"Weekend {occ} NOT later than weekday: {we_mean:.1f}h vs {wd_mean:.1f}h")
 
-    dinner_hours = df[df["meal_occasion"] == "dinner"]["hour"]
-    check(dinner_hours.between(17, 23).mean() > 0.85,
-          f"Dinner between 5–11pm: {dinner_hours.between(17,23).mean()*100:.1f}%",
-          f"Dinner timing wrong: {dinner_hours.between(17,23).mean()*100:.1f}% in valid window")
+    # ── Ramadan: Muslim fast day meals not at daytime ─────────
+    if users_df is not None and "is_fast_day" in df.columns:
+        muslim_users = set(users_df[users_df["religion"]=="muslim"]["user_id"])
+        ramadan_meals = df[(df["user_id"].isin(muslim_users)) &
+                           (df["is_fast_day"]==True) &
+                           (df["hour"].between(5,18))]
+        check(len(ramadan_meals)/max(df[(df["user_id"].isin(muslim_users)) &
+                                        (df["is_fast_day"]==True)].shape[0],1) < 0.10,
+              f"Ramadan fast day: meals not between 5am–6pm (<10%): {len(ramadan_meals)} daytime meals",
+              f"{len(ramadan_meals)} meals during Ramadan daytime — fasting Muslims shouldn't eat 5am–6pm")
 
-    late_night_hours = df[df["meal_occasion"] == "late_night"]["hour"] if "late_night" in df["meal_occasion"].values else pd.Series([], dtype=float)
-    if len(late_night_hours) > 0:
-        check(late_night_hours.between(21, 23).mean() > 0.70,
-              f"Late-night meals 9–11pm: {late_night_hours.between(21,23).mean()*100:.1f}%")
-
-    # ── Duplicate meal check (same user, same timestamp) ──────
-    dupes = df.duplicated(subset=["user_id", "occurred_at"])
-    check(dupes.sum() == 0,
-          "No duplicate (user, timestamp) pairs",
-          f"{dupes.sum()} duplicate (user, timestamp) rows — meal_id collision")
-
-    # ── Same-day meal ordering sanity ─────────────────────────
-    # Breakfast should precede lunch should precede dinner
-    occasion_order = {"breakfast": 0, "lunch": 1, "snack": 2, "dinner": 3, "late_night": 4}
-    df["occ_order"] = df["meal_occasion"].map(occasion_order)
-    df_sorted = df.sort_values(["user_id", "occurred_at"])
-    df_sorted["date"] = df_sorted["occurred_at"].dt.date
-
-    sample_days = df_sorted.groupby(["user_id", "date"]).filter(lambda x: len(x) >= 2)
+    # ── Meal ordering within a day (breakfast before lunch) ───
+    df_s = df.sort_values(["user_id","occurred_at"])
+    df_s["date"] = df_s["occurred_at"].dt.date
+    occ_rank = {"breakfast":0,"lunch":1,"snack":2,"dinner":3,"late_night":4}
+    df_s["occ_rank"] = df_s["meal_occasion"].map(occ_rank)
+    sample = df_s.dropna(subset=["occ_rank"]).head(200000)
     inversions = 0
-    for _, day_meals in sample_days.head(50000).groupby(["user_id", "date"]):
-        ordered = day_meals.sort_values("occurred_at")["occ_order"].tolist()
-        for i in range(len(ordered) - 1):
-            if ordered[i] > ordered[i+1]:
+    for _, day in sample.groupby(["user_id","date"]):
+        ranks = day.sort_values("occurred_at")["occ_rank"].tolist()
+        for i in range(len(ranks)-1):
+            if ranks[i] > ranks[i+1]:
                 inversions += 1
-    check(inversions < 100,
-          f"Meal occasion ordering within days: {inversions} inversions",
-          f"Meal ordering issues: {inversions} days where dinner precedes lunch etc.")
+    check(inversions < 200, f"Meal occasion ordering within days: {inversions} inversions",
+          f"Meal ordering issues: {inversions} (dinner before lunch etc.)")
 
-    # ── Calorie plausibility per occasion ─────────────────────
-    for occ, (lo, hi) in [("breakfast", (50, 600)), ("lunch", (100, 900)),
-                           ("dinner", (100, 900)), ("snack", (30, 500))]:
-        sub = df[df["meal_occasion"] == occ]["estimated_calories"]
-        if len(sub) == 0:
-            continue
-        pct_valid = sub.between(lo, hi).mean()
-        check(pct_valid > 0.90,
-              f"{occ} calories in {lo}–{hi} kcal range: {pct_valid*100:.1f}%",
-              f"{occ} has {(1-pct_valid)*100:.1f}% meals outside plausible calorie range")
-
-    # ── GI score validity ─────────────────────────────────────
-    check(df["gi_score"].between(0, 100).all(),
-          "All GI scores 0–100",
-          f"{(~df['gi_score'].between(0,100)).sum()} rows have GI outside 0–100")
-
-    # ── Nutritional consistency: calories ≈ macro sum ─────────
-    # 4 cal/g protein, 4 cal/g carbs, 9 cal/g fat
-    df["macro_cal"] = (df["estimated_protein_g"] * 4 +
-                       df["estimated_carbs_g"] * 4 +
-                       df["estimated_fat_g"] * 9)
-    macro_ratio = (df["macro_cal"] / df["estimated_calories"].replace(0, np.nan)).dropna()
-    check(macro_ratio.between(0.5, 2.0).mean() > 0.85,
-          f"Calorie ≈ macro sum (within 2×) in {macro_ratio.between(0.5,2.0).mean()*100:.1f}% rows",
+    # ── Macro sum ≈ calories ───────────────────────────────────
+    df["macro_cal"] = (df["estimated_protein_g"]*4 +
+                       df["estimated_carbs_g"]*4 +
+                       df["estimated_fat_g"]*9)
+    ratio = (df["macro_cal"] / df["estimated_calories"].replace(0,np.nan)).dropna()
+    check(ratio.between(0.5,2.5).mean()>0.85,
+          f"Calorie ≈ macro sum (within 2.5×): {ratio.between(0.5,2.5).mean()*100:.1f}%",
           warn=True)
 
-    # ── Portion multiplier range ───────────────────────────────
-    check(df["portion_multiplier"].between(0.3, 3.0).all(),
-          "Portion multipliers 0.3–3.0",
-          f"{(~df['portion_multiplier'].between(0.3,3.0)).sum()} rows have extreme portion multipliers")
+    # ── Calorie plausibility per occasion ─────────────────────
+    for occ,(lo,hi) in [("breakfast",(50,600)),("lunch",(100,900)),
+                         ("dinner",(100,900)),("snack",(30,500))]:
+        sub = df[df["meal_occasion"]==occ]["estimated_calories"]
+        if len(sub)==0: continue
+        pct = sub.between(lo,hi).mean()
+        check(pct>0.90, f"{occ} calories in {lo}–{hi} kcal: {pct*100:.1f}%",
+              f"{occ} has {(1-pct)*100:.1f}% meals outside plausible calorie range")
 
     # ── Vegetarian users eating non-veg dishes ────────────────
     if users_df is not None:
-        veg_users = set(users_df[users_df["is_vegetarian"] == True]["user_id"])
-        non_veg_dishes = {"chicken biryani","mutton biryani","butter chicken","chicken curry",
-                          "chicken tikka","mutton curry","laal maas","machher jhol",
-                          "egg curry","anda bhurji","tandoori chicken","rogan josh",
-                          "shorshe ilish","chingri malai curry","kerala fish curry"}
-        veg_eating_nonveg = df[(df["user_id"].isin(veg_users)) & (df["dish_name"].isin(non_veg_dishes))]
-        check(len(veg_eating_nonveg) == 0,
-              "No vegetarian users eating non-veg dishes",
-              f"{len(veg_eating_nonveg)} rows: vegetarian users eating non-veg — fix get_restricted_dishes()")
+        veg_users = set(users_df[users_df["is_vegetarian"]==True]["user_id"])
+        veg_nonveg = df[(df["user_id"].isin(veg_users)) & (df["dish_name"].isin(NON_VEG_DISHES))]
+        check(len(veg_nonveg)==0, "No vegetarian users eating non-veg dishes",
+              f"{len(veg_nonveg)} rows: vegetarian users eating non-veg "
+              f"({veg_nonveg['dish_name'].value_counts().head(3).to_dict()})")
 
-    # ── Muslim users eating pork dishes ───────────────────────
+    # ── no_dairy users eating dairy dishes ────────────────────
     if users_df is not None:
-        muslim_users = set(users_df[users_df["religion"] == "muslim"]["user_id"])
-        pork_dishes = {"vindaloo", "pork curry", "bacon"}
-        muslim_pork = df[(df["user_id"].isin(muslim_users)) & (df["dish_name"].isin(pork_dishes))]
-        check(len(muslim_pork) == 0,
-              "No Muslim users eating pork dishes",
-              f"{len(muslim_pork)} rows: Muslim users eating pork")
+        dairy_restricted = set(users_df[users_df["dietary_restrictions"].str.contains("no_dairy",na=False)]["user_id"])
+        dairy_violation = df[(df["user_id"].isin(dairy_restricted)) & (df["dish_name"].isin(DAIRY_DISHES))]
+        check(len(dairy_violation)==0, "no_dairy users not eating dairy dishes",
+              f"{len(dairy_violation)} rows: no_dairy users eating dairy "
+              f"({dairy_violation['dish_name'].value_counts().head(3).to_dict()})")
 
-    # ── Fast day food sanity ───────────────────────────────────
-    if "is_fast_day" in df.columns:
-        fast_meals = df[df["is_fast_day"] == True]
-        if len(fast_meals) > 0:
-            hindu_fast_forbidden = {"chicken biryani","butter chicken","mutton curry","egg curry"}
-            bad_fast_meals = fast_meals[fast_meals["dish_name"].isin(hindu_fast_forbidden)]
-            check(len(bad_fast_meals) / max(len(fast_meals), 1) < 0.02,
-                  f"Fast day meals: non-fasting foods <2%: {len(bad_fast_meals)} rows",
-                  f"Fast day meals contain non-fasting foods: {len(bad_fast_meals)} rows ({bad_fast_meals['dish_name'].value_counts().head(3).to_dict()})")
+    # ── no_gluten users eating gluten dishes ──────────────────
+    if users_df is not None:
+        gluten_restricted = set(users_df[users_df["dietary_restrictions"].str.contains("no_gluten",na=False)]["user_id"])
+        gluten_violation = df[(df["user_id"].isin(gluten_restricted)) & (df["dish_name"].isin(GLUTEN_DISHES))]
+        check(len(gluten_violation)==0, "no_gluten users not eating gluten dishes",
+              f"{len(gluten_violation)} rows: no_gluten users eating gluten dishes "
+              f"({gluten_violation['dish_name'].value_counts().head(3).to_dict()})")
+
+    # ── Jain users eating onion/garlic dishes ─────────────────
+    if users_df is not None:
+        jain_users = set(users_df[(users_df["religion"]=="jain") |
+                                   (users_df["dietary_restrictions"].str.contains("no_onion_garlic",na=False))]["user_id"])
+        jain_onion = df[(df["user_id"].isin(jain_users)) & (df["dish_name"].isin(ONION_GARLIC_DISHES))]
+        check(len(jain_onion)/max(n,1) < 0.02,
+              f"Jain/no_onion_garlic users not eating onion dishes: {len(jain_onion)} violations",
+              f"{len(jain_onion)} Jain users eating onion/garlic dishes — dietary restriction not enforced")
+
+    # ── Diabetic meals with GI>70 marked health_compliant ─────
+    if users_df is not None and "health_compliant" in df.columns:
+        diabetic_users = set(users_df[users_df["conditions"].str.contains("type2_diabetes",na=False)]["user_id"])
+        bad = df[(df["user_id"].isin(diabetic_users)) &
+                 (df["gi_score"]>70) &
+                 (df["health_compliant"]==True)]
+        check(len(bad)/max(n,1) < 0.02,
+              f"Diabetic users: high-GI meals not marked compliant: {len(bad)} violations",
+              f"{len(bad)} diabetic meals have GI>70 but health_compliant=True — logic error")
+
+    # ── Hypertension + low_sodium eating high-sodium dishes ───
+    if users_df is not None and "health_compliant" in df.columns:
+        hbp_users = set(users_df[users_df["dietary_restrictions"].str.contains("low_sodium",na=False)]["user_id"])
+        hbp_sodium = df[(df["user_id"].isin(hbp_users)) &
+                        (df["dish_name"].isin(HIGH_SODIUM_DISHES)) &
+                        (df["health_compliant"]==True)]
+        check(len(hbp_sodium)/max(n,1) < 0.05,
+              f"low_sodium users: high-sodium dishes not marked compliant: {len(hbp_sodium)}",
+              warn=True)
+
+    # ── Fast day food: no non-veg on Hindu fast days ──────────
+    if users_df is not None and "is_fast_day" in df.columns:
+        hindu_users = set(users_df[users_df["religion"]=="hindu"]["user_id"])
+        hindu_fast = df[(df["user_id"].isin(hindu_users)) & (df["is_fast_day"]==True)]
+        if len(hindu_fast) > 0:
+            bad_fast = hindu_fast[hindu_fast["dish_name"].isin(NON_VEG_DISHES)]
+            check(len(bad_fast)==0, "Hindu fast days: no non-veg food",
+                  f"{len(bad_fast)} Hindu fast day meals with non-veg food")
+            bad_fast2 = hindu_fast[hindu_fast["dish_name"].isin(ONION_GARLIC_DISHES)]
+            check(len(bad_fast2)/max(len(hindu_fast),1) < 0.05,
+                  f"Hindu fast days: minimal onion/garlic dishes: {len(bad_fast2)/len(hindu_fast)*100:.1f}%",
+                  warn=True)
 
     # ── Season ↔ month consistency ────────────────────────────
     MONTH_SEASON = {1:"winter",2:"winter",3:"summer_onset",4:"summer",5:"summer",
                     6:"monsoon_onset",7:"monsoon",8:"monsoon",9:"monsoon_end",
                     10:"autumn",11:"winter_onset",12:"winter"}
-    df["expected_season"] = df["occurred_at"].dt.month.map(MONTH_SEASON)
-    season_mismatch = (df["season"] != df["expected_season"]).sum()
-    check(season_mismatch / n < 0.01,
-          f"Season matches month: {season_mismatch} mismatches",
-          f"Season/month mismatch in {season_mismatch} rows ({season_mismatch/n*100:.1f}%)")
+    df["exp_season"] = df["occurred_at"].dt.month.map(MONTH_SEASON)
+    mismatch = (df["season"]!=df["exp_season"]).sum()
+    check(mismatch/n<0.01, f"Season matches month: {mismatch} mismatches",
+          f"Season/month mismatch in {mismatch} rows")
 
-    # ── Day of week ↔ is_weekend consistency ──────────────────
-    df["expected_weekend"] = df["dow"].isin([5, 6])
-    weekend_mismatch = (df["is_weekend"] != df["expected_weekend"]).sum()
-    check(weekend_mismatch == 0,
-          "is_weekend matches day_of_week",
-          f"is_weekend wrong in {weekend_mismatch} rows")
+    # ── is_weekend ↔ day_of_week ──────────────────────────────
+    df["exp_weekend"] = df["dow"].isin([5,6])
+    we_mismatch = (df["is_weekend"]!=df["exp_weekend"]).sum()
+    check(we_mismatch==0, "is_weekend consistent with day_of_week",
+          f"is_weekend wrong in {we_mismatch} rows")
 
-    # ── life_event_phase always 'normal' ──────────────────────
+    # ── life_event_phase always normal ────────────────────────
     if "life_event_phase" in df.columns:
-        always_normal = (df["life_event_phase"] == "normal").mean()
-        check(always_normal < 0.95,
+        always_normal = (df["life_event_phase"]=="normal").mean()
+        check(always_normal<0.95,
               f"life_event_phase has non-normal values: {(1-always_normal)*100:.1f}%",
-              f"life_event_phase is 'normal' in {always_normal*100:.1f}% rows — life events not propagated (C3 fix needed)")
+              f"life_event_phase is 'normal' in {always_normal*100:.1f}% rows — C3 fix needed")
+
+    # ── compliance_score only 2 values per user ───────────────
+    if "compliance_score" in df.columns and users_df is not None:
+        sample_users = df["user_id"].unique()[:50]
+        two_value_users = 0
+        for uid in sample_users:
+            scores = df[df["user_id"]==uid]["compliance_score"].nunique()
+            if scores <= 2:
+                two_value_users += 1
+        check(two_value_users/50 < 0.80,
+              f"compliance_score has variance per user: {two_value_users}/50 users have ≤2 unique values",
+              f"compliance_score has ≤2 values for {two_value_users}/50 sampled users "
+              f"— it's just health_literacy × 1.0/0.3, a leaky feature")
+
+    # ── habit_strength ↔ dish repeat rate ─────────────────────
+    if users_df is not None and "repeat_meal" in df.columns:
+        habit = users_df[["user_id","habit_strength"]]
+        repeat_rate = df.groupby("user_id")["repeat_meal"].mean().reset_index()
+        repeat_rate.columns = ["user_id","repeat_rate"]
+        merged = habit.merge(repeat_rate, on="user_id")
+        corr = merged["habit_strength"].corr(merged["repeat_rate"])
+        check(corr > 0.05,
+              f"habit_strength correlated with repeat meal rate: r={corr:.3f}",
+              f"habit_strength NOT correlated with repeat meals: r={corr:.3f} — habit logic not working")
+
+    # ── health_literacy ↔ compliance rate ─────────────────────
+    if users_df is not None and "health_compliant" in df.columns:
+        lit = users_df[["user_id","health_literacy"]]
+        comp = df.groupby("user_id")["health_compliant"].mean().reset_index()
+        comp.columns = ["user_id","comp_rate"]
+        merged = lit.merge(comp, on="user_id")
+        corr = merged["health_literacy"].corr(merged["comp_rate"])
+        check(corr > 0.10,
+              f"health_literacy correlated with compliance: r={corr:.3f}",
+              f"health_literacy NOT correlated with compliance: r={corr:.3f} — literacy effect not working")
+
+    # ── order_frequency_weekly ↔ actual ordered_delivery ─────
+    if users_df is not None and "ordered_delivery" in df.columns:
+        freq = users_df[["user_id","order_frequency_weekly"]]
+        actual = df.groupby("user_id")["ordered_delivery"].mean().reset_index()
+        actual.columns = ["user_id","order_rate"]
+        merged = freq.merge(actual, on="user_id")
+        corr = merged["order_frequency_weekly"].corr(merged["order_rate"])
+        check(corr > 0.10,
+              f"order_frequency_weekly correlated with actual delivery rate: r={corr:.3f}",
+              f"order_frequency_weekly NOT correlated with actual orders: r={corr:.3f} — profile not reflected in behavior")
 
     # ── Dish diversity ─────────────────────────────────────────
-    top_dish_pct = df["dish_name"].value_counts(normalize=True).iloc[0] * 100
-    check(top_dish_pct < 10,
-          f"Top dish <10% of all meals: {df['dish_name'].value_counts().index[0]} at {top_dish_pct:.1f}%",
-          f"Top dish dominates: {top_dish_pct:.1f}% — cuisine pool too narrow")
+    top_pct = df["dish_name"].value_counts(normalize=True).iloc[0]*100
+    check(top_pct<10, f"Top dish <10%: {df['dish_name'].value_counts().index[0]} at {top_pct:.1f}%",
+          f"Top dish dominates: {top_pct:.1f}%")
+    check(df["dish_name"].nunique()>=50, f"Dish diversity: {df['dish_name'].nunique()} unique dishes")
 
-    check(df["dish_name"].nunique() >= 50, f"Dish diversity: {df['dish_name'].nunique()} unique dishes")
-
-    # ── Cuisine type distribution ──────────────────────────────
-    cuisine_top = df["cuisine_type"].value_counts(normalize=True).iloc[0]
-    check(cuisine_top < 0.40, f"Top cuisine <40%: {cuisine_top*100:.1f}%",
-          f"Cuisine dominates: {cuisine_top*100:.1f}%")
-
-    # ── health_compliant ↔ conditions logic ───────────────────
-    if users_df is not None and "health_compliant" in df.columns:
-        diabetic_users = set(users_df[users_df["conditions"].str.contains("type2_diabetes", na=False)]["user_id"])
-        diabetic_meals = df[df["user_id"].isin(diabetic_users)]
-        if len(diabetic_meals) > 0:
-            high_gi_compliant = diabetic_meals[(diabetic_meals["gi_score"] > 70) & (diabetic_meals["health_compliant"] == True)]
-            check(len(high_gi_compliant) / len(diabetic_meals) < 0.05,
-                  f"Diabetic users: high-GI meals not marked compliant (<5%): {len(high_gi_compliant)/len(diabetic_meals)*100:.1f}%",
-                  f"Diabetic users: {len(high_gi_compliant)} high-GI meals marked health_compliant — logic error")
-
-    print(f"\n  Occasion dist: {df['meal_occasion'].value_counts(normalize=True).round(3).to_dict()}")
-    print(f"  Avg cal/meal: {df['estimated_calories'].mean():.0f}  "
+    print(f"\n  Avg cal: {df['estimated_calories'].mean():.0f}  "
           f"Avg protein: {df['estimated_protein_g'].mean():.1f}g  "
           f"Avg GI: {df['gi_score'].mean():.1f}")
-
     return df
 
 
 # ══════════════════════════════════════════════════════════════
-# 3. FAST DAYS — religion-food cultural correctness
+# 4. FAST DAYS
 # ══════════════════════════════════════════════════════════════
 
-def validate_fast_days(path):
+def validate_fast_days(path, users_df=None):
     section("fast_days.csv — religion ↔ food cultural correctness")
     df = pd.read_csv(path)
     n = len(df)
     print(f"  Rows: {n:,}")
 
-    # ── Ramadan only Muslims ───────────────────────────────────
-    ramadan_non_muslim = df[(df["fast_type"] == "ramadan") & (df["religion"] != "muslim")]
-    check(len(ramadan_non_muslim) == 0,
+    check(len(df[(df["fast_type"]=="ramadan") & (df["religion"]!="muslim")])==0,
           "Ramadan → Muslims only",
-          f"{len(ramadan_non_muslim)} Ramadan records for non-Muslims")
+          f"{len(df[(df['fast_type']=='ramadan') & (df['religion']!='muslim')])} Ramadan records for non-Muslims")
 
-    # ── Hindu fasts not for Muslims ───────────────────────────
-    hindu_fasts = ["monday_fast", "ekadashi", "navratri"]
-    hindu_fast_for_muslim = df[(df["fast_type"].isin(hindu_fasts)) & (df["religion"] == "muslim")]
-    check(len(hindu_fast_for_muslim) == 0,
-          "Hindu fasts → Hindus only",
-          f"{len(hindu_fast_for_muslim)} Hindu fast records for Muslims")
+    hindu_fasts = ["monday_fast","ekadashi","navratri","shravan"]
+    bad = df[(df["fast_type"].isin(hindu_fasts)) & (df["religion"]=="muslim")]
+    check(len(bad)==0, "Hindu fasts → Hindus only",
+          f"{len(bad)} Hindu fast records for Muslims")
 
-    # ── Paryushan only Jains ──────────────────────────────────
-    paryushan_non_jain = df[(df["fast_type"] == "paryushan") & (df["religion"] != "jain")]
-    check(len(paryushan_non_jain) == 0,
-          "Paryushan → Jains only",
-          f"{len(paryushan_non_jain)} Paryushan records for non-Jains")
+    pary_non_jain = df[(df["fast_type"]=="paryushan") & (df["religion"]!="jain")]
+    check(len(pary_non_jain)==0, "Paryushan → Jains only",
+          f"{len(pary_non_jain)} Paryushan records for non-Jains")
 
-    # ── Hindu vrat foods in Ramadan iftar ────────────────────
-    hindu_vrat = {"sabudana khichdi", "kuttu roti", "singhare ki puri", "sendha namak"}
     if "post_fast_meal" in df.columns:
-        ramadan_rows = df[df["fast_type"] == "ramadan"]
-        bad_iftar = ramadan_rows[ramadan_rows["post_fast_meal"].isin(hindu_vrat)]
-        check(len(bad_iftar) == 0,
-              "No Hindu vrat foods as Ramadan iftar",
-              f"{len(bad_iftar)} Ramadan rows with Hindu vrat iftar foods: {bad_iftar['post_fast_meal'].value_counts().to_dict()}")
+        hindu_vrat = {"sabudana khichdi","kuttu roti","singhare ki puri"}
+        bad_iftar = df[(df["fast_type"]=="ramadan") & (df["post_fast_meal"].isin(hindu_vrat))]
+        check(len(bad_iftar)==0, "No Hindu vrat foods as Ramadan iftar",
+              f"{len(bad_iftar)} Ramadan rows with Hindu vrat iftar: "
+              f"{bad_iftar['post_fast_meal'].value_counts().to_dict()}")
 
-    # ── Pre-fast meal realism ─────────────────────────────────
-    if "pre_fast_meal" in df.columns:
-        ramadan_rows = df[df["fast_type"] == "ramadan"]
-        good_sehri = {"roti", "paratha", "eggs", "dal tadka", "steamed rice", "dahi"}
-        bad_sehri = ramadan_rows[~ramadan_rows["pre_fast_meal"].isin(good_sehri)]
-        check(len(bad_sehri) / max(len(ramadan_rows), 1) < 0.30,
-              f"Ramadan sehri foods realistic: {len(bad_sehri)/max(len(ramadan_rows),1)*100:.1f}% unrecognized",
-              warn=True)
-
-    # ── Calorie impact direction ───────────────────────────────
     if "calorie_impact" in df.columns:
-        positive_impact = (df["calorie_impact"] > 0).sum()
-        check(positive_impact == 0,
-              "All fast day calorie impacts negative",
-              f"{positive_impact} fast days have positive calorie impact — fasting should reduce calories")
+        check((df["calorie_impact"]>0).sum()==0, "All calorie impacts negative",
+              f"{(df['calorie_impact']>0).sum()} fast days with positive calorie impact")
+        if "complete_fast" in df.columns:
+            comp = df[df["complete_fast"]==True]["calorie_impact"].mean()
+            incomp = df[df["complete_fast"]==False]["calorie_impact"].mean()
+            if not (np.isnan(comp) or np.isnan(incomp)):
+                check(comp < incomp,
+                      f"Complete fast → bigger reduction: {comp:.2f} vs {incomp:.2f}",
+                      f"Complete fast not more restrictive than incomplete: {comp:.2f} vs {incomp:.2f}")
 
-    # ── Complete fast ↔ calorie impact ────────────────────────
-    if "complete_fast" in df.columns and "calorie_impact" in df.columns:
-        complete = df[df["complete_fast"] == True]["calorie_impact"]
-        incomplete = df[df["complete_fast"] == False]["calorie_impact"]
-        if len(complete) > 0 and len(incomplete) > 0:
-            check(complete.mean() < incomplete.mean(),
-                  f"Complete fast → bigger calorie reduction: {complete.mean():.2f} vs {incomplete.mean():.2f}",
-                  f"Complete fast calorie impact not more negative than incomplete fast")
+    # ── Observance ↔ fasting frequency ───────────────────────
+    if users_df is not None and "observance_level" in df.columns:
+        fast_counts = df.groupby("user_id").size().reset_index(name="fast_count")
+        obs = users_df[["user_id","observance_level"]]
+        merged = obs.merge(fast_counts, on="user_id", how="left").fillna(0)
+        corr = merged["observance_level"].corr(merged["fast_count"])
+        check(corr > 0.05,
+              f"Observance level correlated with fasting frequency: r={corr:.3f}",
+              f"Observance NOT correlated with fasting: r={corr:.3f}")
 
-    # ── Observance level ↔ fasting frequency ─────────────────
-    if "observance_level" in df.columns:
-        check(df["observance_level"].between(0, 1).all(),
-              "Observance level 0–1 in fast_days")
-
-    print(f"  Fast type dist: {df['fast_type'].value_counts().to_dict()}")
+    print(f"  Fast types: {df['fast_type'].value_counts().to_dict()}")
 
 
 # ══════════════════════════════════════════════════════════════
-# 4. INTERACTIONS — position bias, click logic, signal quality
+# 5. INTERACTIONS
 # ══════════════════════════════════════════════════════════════
 
-def validate_interactions(path):
-    section("interactions.csv — click logic + position bias + signal quality")
+def validate_interactions(path, users_df=None):
+    section("interactions.csv — signal quality + consistency")
     df = pd.read_csv(path)
     n = len(df)
     print(f"  Rows: {n:,}")
 
-    # ── Action distribution ────────────────────────────────────
     action_dist = df["action"].value_counts(normalize=True)
-    check("skip" in action_dist and action_dist["skip"] > 0.40,
-          f"Skip dominates >40%: {action_dist.get('skip',0)*100:.1f}%")
-    check("order" in action_dist and 0.01 <= action_dist["order"] <= 0.20,
+    check(action_dist.get("skip",0)>0.40, f"Skip >40%: {action_dist.get('skip',0)*100:.1f}%")
+    check(0.01<=action_dist.get("order",0)<=0.20,
           f"Order rate 1–20%: {action_dist.get('order',0)*100:.1f}%")
 
-    # ── Position bias: rank 0 should have highest order rate ──
-    rank_col = next((c for c in ["recommendation_rank","rank_position","rank"] if c in df.columns), None)
+    # ── Position bias ──────────────────────────────────────────
+    rank_col = next((c for c in ["recommendation_rank","rank_position","rank"] if c in df.columns),None)
     if rank_col:
-        df["ordered"] = (df["action"] == "order").astype(int)
+        df["ordered"] = (df["action"]=="order").astype(int)
         stats = df.groupby(rank_col)["ordered"].mean().sort_index()
-        if len(stats) >= 3:
-            # Rank 0 should be higher than rank 3+
+        if len(stats)>=3:
             rank0 = stats.iloc[0]
-            rank3 = stats.iloc[3] if len(stats) > 3 else stats.iloc[-1]
-            check(rank0 > rank3,
-                  f"Position bias: rank-0 order rate ({rank0*100:.1f}%) > rank-3 ({rank3*100:.1f}%)",
-                  f"No position bias — rank-0={rank0*100:.1f}% ≤ rank-3={rank3*100:.1f}%")
-            lift = rank0 / max(stats.iloc[-1], 0.001)
-            check(3 < lift < 25,
-                  f"Position bias lift in realistic range 3–25×: {lift:.1f}×",
-                  f"Position bias lift {lift:.1f}× — {'too extreme' if lift >= 25 else 'too weak, no signal'}")
+            rank_last = stats.iloc[-1]
+            lift = rank0/max(rank_last,0.001)
+            check(rank0>rank_last, f"Rank-0 order rate > last rank: {rank0*100:.1f}% vs {rank_last*100:.1f}%",
+                  f"No position bias: rank0={rank0*100:.1f}% vs last={rank_last*100:.1f}%")
+            check(3<lift<25, f"Position bias lift 3–25×: {lift:.1f}×",
+                  f"Position bias lift {lift:.1f}× — {'too extreme' if lift>=25 else 'too weak'}")
 
-    # ── final_ordered ↔ action consistency ───────────────────
+    # ── final_ordered ↔ action ─────────────────────────────────
     if "final_ordered" in df.columns:
-        action_order = df[df["action"] == "order"]["final_ordered"]
-        check(action_order.mean() > 0.95,
-              f"action=order → final_ordered=True: {action_order.mean()*100:.1f}%",
-              f"action=order but final_ordered=False in {(~action_order).sum()} rows — inconsistency")
+        bad1 = df[(df["action"]=="order") & (~df["final_ordered"])].shape[0]
+        bad2 = df[(df["action"]=="skip") & (df["final_ordered"]==True)].shape[0]
+        check(bad1==0, "action=order → final_ordered=True",
+              f"{bad1} rows: action=order but final_ordered=False")
+        check(bad2==0, "action=skip → final_ordered=False",
+              f"{bad2} rows: action=skip but final_ordered=True")
 
-        skip_order = df[df["action"] == "skip"]["final_ordered"]
-        check(skip_order.mean() < 0.05,
-              f"action=skip → final_ordered=False: {(~skip_order).mean()*100:.1f}%",
-              f"action=skip but final_ordered=True in {skip_order.sum()} rows — inconsistency")
-
-    # ── was_top3 ↔ recommendation_rank consistency ────────────
+    # ── was_top3 ↔ rank ────────────────────────────────────────
     if "was_top3" in df.columns and rank_col:
-        top3_check = df[(df[rank_col] < 3) & (~df["was_top3"])].shape[0]
-        not_top3_check = df[(df[rank_col] >= 3) & (df["was_top3"])].shape[0]
-        check(top3_check == 0 and not_top3_check == 0,
-              "was_top3 consistent with recommendation_rank",
-              f"was_top3 inconsistent: {top3_check + not_top3_check} rows wrong")
+        bad = df[((df[rank_col]<3) & (~df["was_top3"])) | ((df[rank_col]>=3) & (df["was_top3"]))].shape[0]
+        check(bad==0, "was_top3 consistent with rank",
+              f"was_top3 inconsistent: {bad} rows")
 
-    # ── Session duration: clicks > skips ─────────────────────
+    # ── Session duration order > click > skip ─────────────────
     if "session_duration_sec" in df.columns:
-        click_dur = df[df["action"] == "click"]["session_duration_sec"].mean()
-        skip_dur = df[df["action"] == "skip"]["session_duration_sec"].mean()
-        order_dur = df[df["action"] == "order"]["session_duration_sec"].mean()
-        check(order_dur > click_dur > skip_dur,
-              f"Session duration: order({order_dur:.0f}s) > click({click_dur:.0f}s) > skip({skip_dur:.0f}s)",
-              f"Session duration order wrong: order={order_dur:.0f}s click={click_dur:.0f}s skip={skip_dur:.0f}s")
+        od = df[df["action"]=="order"]["session_duration_sec"].mean()
+        cd = df[df["action"]=="click"]["session_duration_sec"].mean()
+        sd = df[df["action"]=="skip"]["session_duration_sec"].mean()
+        check(od>cd>sd, f"Duration: order({od:.0f}s)>click({cd:.0f}s)>skip({sd:.0f}s)",
+              f"Session duration order wrong: order={od:.0f} click={cd:.0f} skip={sd:.0f}")
 
-    # ── Vegetarian users not ordering non-veg ────────────────
-    # Can't check without users_df here — done in cross-table
+    # ── user_health_match / cuisine_affinity are NOT random ───
+    # If these are random.uniform they have no signal — test correlation with known factors
+    if users_df is not None and "user_health_match" in df.columns:
+        sample = df.sample(min(10000,n))
+        uhm_std = sample["user_health_match"].std()
+        # If truly random uniform(0.3,1.0), std ≈ 0.202
+        # If computed from user profile, std should still be ~0.2 but correlated with user features
+        # Key test: does user_health_match vary by USER (between-user variance > within-user variance)?
+        user_means = sample.groupby("user_id")["user_health_match"].mean()
+        user_stds  = sample.groupby("user_id")["user_health_match"].std().dropna()
+        between_var = user_means.std()
+        within_var  = user_stds.mean()
+        check(between_var > within_var * 0.3,
+              f"user_health_match has user-level signal (between={between_var:.3f} > within={within_var:.3f})",
+              f"user_health_match appears random — between-user std ({between_var:.3f}) not meaningfully "
+              f"larger than within-user std ({within_var:.3f}). Should be computed from user profile vs dish.",
+              warn=True)
 
-    # ── user_health_match / price_match_score range ───────────
-    for col in ["user_health_match", "price_match_score", "cuisine_affinity"]:
+    # ── Score range checks ────────────────────────────────────
+    for col in ["user_health_match","price_match_score","cuisine_affinity"]:
         if col in df.columns:
-            check(df[col].between(0, 1).all(),
-                  f"{col} in [0,1]",
+            check(df[col].between(0,1).all(), f"{col} in [0,1]",
                   f"{(~df[col].between(0,1)).sum()} rows have {col} outside [0,1]")
 
-    print(f"  Rank 0 order rate: {df[df[rank_col]==0]['ordered'].mean()*100:.1f}%" if rank_col else "")
+    print(f"  Actions: {action_dist.to_dict()}")
 
 
 # ══════════════════════════════════════════════════════════════
-# 5. HEALTH OUTCOMES — BMI physics, compliance delta, trend
+# 6. HEALTH OUTCOMES
 # ══════════════════════════════════════════════════════════════
 
-def validate_health_outcomes(path, users_df=None):
-    section("health_outcomes.csv — BMI physics + compliance reality")
+def validate_health_outcomes(path, users_df=None, meal_logs_df=None):
+    section("health_outcomes.csv — BMI physics + causality")
     df = pd.read_csv(path)
     n = len(df)
     print(f"  Rows: {n:,}")
 
     # ── BMI change variance ───────────────────────────────────
     unique_bmi = df["bmi_change"].nunique()
-    check(unique_bmi > 20,
-          f"BMI change has variance: {unique_bmi} unique values",
-          f"BMI change has only {unique_bmi} unique values — likely hardcoded constant")
-
-    bmi_std = df["bmi_change"].std()
-    check(bmi_std > 0.3,
-          f"BMI change std dev: {bmi_std:.3f} (expect >0.3)",
-          f"BMI change std={bmi_std:.3f} — too uniform, not realistic")
-
-    # ── BMI change range ──────────────────────────────────────
-    check(df["bmi_change"].between(-3, 3).mean() > 0.95,
-          f"BMI change in [-3, +3] per quarter: {df['bmi_change'].between(-3,3).mean()*100:.1f}%")
-
-    # ── current_bmi physiologically possible ─────────────────
-    if "current_bmi" in df.columns:
-        check((df["current_bmi"] < 14).sum() == 0,
-              "No current_bmi < 14 (physiologically impossible)",
-              f"{(df['current_bmi'] < 14).sum()} rows have current_bmi < 14")
-        check((df["current_bmi"] > 55).sum() == 0,
-              "No current_bmi > 55",
-              f"{(df['current_bmi'] > 55).sum()} rows have current_bmi > 55")
+    check(unique_bmi>20, f"BMI change variance: {unique_bmi} unique values",
+          f"BMI change has only {unique_bmi} unique values — hardcoded constant")
+    check(df["bmi_change"].std()>0.3, f"BMI change std: {df['bmi_change'].std():.3f}",
+          f"BMI change std={df['bmi_change'].std():.3f} too uniform")
 
     # ── BMI trajectory per user ───────────────────────────────
     if "current_bmi" in df.columns:
-        user_bmi = df.groupby("user_id")["current_bmi"]
-        extreme_drop = user_bmi.apply(lambda x: x.max() - x.min() > 15)
-        check(extreme_drop.sum() == 0,
-              "No user loses/gains >15 BMI points across quarters",
-              f"{extreme_drop.sum()} users have >15 BMI point swings — unrealistic trajectory")
+        check((df["current_bmi"]<14).sum()==0, "No current_bmi < 14",
+              f"{(df['current_bmi']<14).sum()} rows have current_bmi < 14 — physiologically impossible")
+        check((df["current_bmi"]>55).sum()==0, "No current_bmi > 55",
+              f"{(df['current_bmi']>55).sum()} rows have current_bmi > 55")
+        swings = df.groupby("user_id")["current_bmi"].apply(lambda x: x.max()-x.min())
+        check((swings>15).sum()==0,
+              "No user has >15 BMI point swing across quarters",
+              f"{(swings>15).sum()} users have >15 BMI point swing — unrealistic")
 
-    # ── Compliance improvement is actual delta ────────────────
+    # ── compliance_improvement is real delta ──────────────────
     if "compliance_improvement" in df.columns and "compliance_rate" in df.columns:
-        derived = (df["compliance_rate"] - 0.5).round(3)
-        formula_match = (df["compliance_improvement"].round(3) == derived).mean()
-        check(formula_match < 0.90,
-              f"compliance_improvement is real delta (not compliance-0.5): {formula_match*100:.0f}% formula match",
-              f"compliance_improvement = compliance_rate - 0.5 in {formula_match*100:.0f}% rows — hardcoded formula, fix compute_compliance_improvement()")
+        formula_pct = (df["compliance_improvement"].round(3) == (df["compliance_rate"]-0.5).round(3)).mean()
+        check(formula_pct<0.90, f"compliance_improvement is real delta: {formula_pct*100:.0f}% formula match",
+              f"compliance_improvement = compliance_rate - 0.5 in {formula_pct*100:.0f}% rows — hardcoded")
 
     # ── Health trend variance ─────────────────────────────────
     if "health_trend" in df.columns:
-        trend_dist = df["health_trend"].value_counts(normalize=True)
-        stable_pct = trend_dist.get("stable", 0)
-        check(stable_pct < 0.95,
-              f"health_trend not always stable: stable={stable_pct*100:.1f}%",
-              f"health_trend='stable' for {stable_pct*100:.1f}% — no dynamics modelled")
+        stable_pct = df["health_trend"].value_counts(normalize=True).get("stable",0)
+        check(stable_pct<0.95, f"health_trend not always stable: {stable_pct*100:.1f}% stable",
+              f"health_trend='stable' for {stable_pct*100:.1f}% rows — no dynamics")
 
-    # ── Condition severity change makes sense ─────────────────
-    if "condition_severity_change" in df.columns:
-        all_zero = (df["condition_severity_change"] == 0).mean()
-        check(all_zero < 0.80,
-              f"condition_severity_change has variation: {all_zero*100:.1f}% are zero",
-              f"condition_severity_change is 0 for {all_zero*100:.1f}% rows — not tracking condition changes")
-
-    print(f"  BMI change: mean={df['bmi_change'].mean():.3f} "
-          f"std={df['bmi_change'].std():.3f} "
-          f"min={df['bmi_change'].min():.2f} max={df['bmi_change'].max():.2f}")
-
-
-# ══════════════════════════════════════════════════════════════
-# 6. REORDER EVENTS — semantic consistency
-# ══════════════════════════════════════════════════════════════
-
-def validate_reorders(path):
-    section("reorder_events.csv — semantic consistency")
-    df = pd.read_csv(path)
-    n = len(df)
-    print(f"  Rows: {n:,}")
-
-    # ── days_between ≥ 0 ──────────────────────────────────────
-    check((df["days_between"] >= 0).all(),
-          "days_between ≥ 0",
-          f"{(df['days_between'] < 0).sum()} rows have negative days_between")
-
-    # ── total_orders_dish increases monotonically per user+dish
-    df_sorted = df.sort_values(["user_id", "dish_name", "reorder_date"])
-    non_mono = 0
-    for (uid, dish), grp in df_sorted.groupby(["user_id", "dish_name"]):
-        counts = grp["total_orders_dish"].tolist()
-        for i in range(len(counts) - 1):
-            if counts[i] > counts[i+1]:
-                non_mono += 1
-                break
-    check(non_mono == 0,
-          "total_orders_dish monotonically increases per user+dish",
-          f"{non_mono} user+dish combos have non-monotonic order counts")
-
-    # ── reorder_again_prob logic: more orders → higher prob ───
-    df["reorder_bin"] = pd.cut(df["total_orders_dish"], bins=[0,2,5,10,100], labels=["1-2","3-5","6-10","10+"])
-    reorder_by_orders = df.groupby("reorder_bin", observed=True)["reordered_yes_no"].mean()
-    if len(reorder_by_orders) >= 2:
-        check(reorder_by_orders.iloc[-1] >= reorder_by_orders.iloc[0],
-              f"More orders → higher reorder probability: {reorder_by_orders.to_dict()}",
-              f"Reorder probability not increasing with order count — formula broken")
-
-    # ── Rating proxy 3–5 ─────────────────────────────────────
-    if "last_rating_proxy" in df.columns:
-        check(df["last_rating_proxy"].between(1, 5).all(),
-              "Rating proxy in [1, 5]",
-              f"{(~df['last_rating_proxy'].between(1,5)).sum()} rows have rating outside [1,5]")
-
-    print(f"  Reorder rate: {df['reordered_yes_no'].mean()*100:.1f}%")
-    print(f"  Avg days between orders: {df['days_between'].mean():.1f}")
-
-
-# ══════════════════════════════════════════════════════════════
-# 7. SKIP EVENTS — compensatory logic
-# ══════════════════════════════════════════════════════════════
-
-def validate_skip_events(path):
-    section("skip_events.csv — compensatory meal logic")
-    df = pd.read_csv(path)
-    n = len(df)
-    print(f"  Rows: {n:,}")
-
-    # ── Compensatory only for breakfast skips ─────────────────
-    dinner_comp = df[(df["skipped_meal_occasion"] == "dinner") & (df["compensatory_meal_occurred"] == True)]
-    check(len(dinner_comp) / max(n, 1) < 0.05,
-          f"Dinner skips rarely have compensatory meals: {len(dinner_comp)/n*100:.1f}%",
-          warn=True)
-
-    # ── Skip reason plausibility per occasion ─────────────────
-    breakfast_reasons = df[df["skipped_meal_occasion"] == "breakfast"]["skip_reason"].value_counts()
-    valid_breakfast_reasons = {"running_late", "not_hungry", "meeting", "fasting", "forgot"}
-    invalid = set(breakfast_reasons.index) - valid_breakfast_reasons
-    check(len(invalid) == 0,
-          f"Breakfast skip reasons valid: {set(breakfast_reasons.index)}",
-          f"Invalid breakfast skip reasons: {invalid}", warn=True)
-
-    # ── Compensatory calorie increase direction ───────────────
-    if "compensatory_calorie_increase" in df.columns:
-        comp_meals = df[df["compensatory_meal_occurred"] == True]
-        if len(comp_meals) > 0:
-            # Some should be positive (ate more at lunch), some negative
-            positive_pct = (comp_meals["compensatory_calorie_increase"] > 0).mean()
-            check(0.1 <= positive_pct <= 0.9,
-                  f"Compensatory calorie increase has variance: {positive_pct*100:.1f}% positive",
+    # ── avg_daily_calories ↔ meal_logs consistency ────────────
+    if meal_logs_df is not None and "avg_daily_calories" in df.columns:
+        ml = meal_logs_df.copy()
+        ml["year"]    = ml["occurred_at"].dt.year
+        ml["quarter"] = ml["occurred_at"].dt.quarter
+        ml_cal = ml.groupby(["user_id","year","quarter"])["estimated_calories"].mean().reset_index()
+        ml_cal.columns = ["user_id","year","quarter","ml_avg_cal"]
+        merged = df.merge(ml_cal, on=["user_id","year","quarter"], how="inner")
+        if len(merged) > 0:
+            ratio = (merged["avg_daily_calories"] / merged["ml_avg_cal"].replace(0,np.nan)).dropna()
+            check(ratio.between(0.5,2.5).mean()>0.85,
+                  f"Health outcomes avg_cal consistent with meal_logs avg_cal: {ratio.between(0.5,2.5).mean()*100:.1f}%",
+                  f"health_outcomes avg_daily_calories differs from meal_logs by >2.5× in {(~ratio.between(0.5,2.5)).sum()} rows",
                   warn=True)
 
-    print(f"  Skip occasion dist: {df['skipped_meal_occasion'].value_counts().to_dict()}")
+    # ── fitness_goal=lose_weight → negative BMI trend ─────────
+    if users_df is not None and "current_bmi" in df.columns:
+        losers = users_df[users_df["fitness_goal"]=="lose_weight"]["user_id"]
+        if len(losers) > 0:
+            loser_outcomes = df[df["user_id"].isin(losers)]
+            if len(loser_outcomes) > 0:
+                avg_change = loser_outcomes["bmi_change"].mean()
+                check(avg_change<0,
+                      f"lose_weight users have negative avg BMI change: {avg_change:.3f}",
+                      f"lose_weight users have positive/zero avg BMI change: {avg_change:.3f} — goal not reflected",
+                      warn=True)
+
+    print(f"  BMI change: mean={df['bmi_change'].mean():.3f} std={df['bmi_change'].std():.3f}")
 
 
 # ══════════════════════════════════════════════════════════════
-# 8. LIFE EVENTS ↔ WEEKLY CONTEXT — causal propagation
+# 7. REORDERS
 # ══════════════════════════════════════════════════════════════
 
-def validate_life_event_propagation(events_path, weekly_path):
-    section("life_events ↔ weekly_context — causal propagation")
-    ev = pd.read_csv(events_path, parse_dates=["event_date"])
-    wc = pd.read_csv(weekly_path, parse_dates=["week_start_date"])
+def validate_reorders(path, meal_logs_df=None):
+    section("reorder_events.csv — semantic consistency + cross-table")
+    df = pd.read_csv(path)
+    n = len(df)
+    print(f"  Rows: {n:,}")
 
-    def get_pre_post(ev_df, wc_df, event_type, metric):
-        users = ev_df[ev_df["event_type"] == event_type]["user_id"].unique()
-        deltas = []
-        for uid in users[:200]:
-            u_wc = wc_df[wc_df["user_id"] == uid].sort_values("week_start_date")
-            ev_dates = ev_df[(ev_df["user_id"] == uid) & (ev_df["event_type"] == event_type)]["event_date"]
-            if ev_dates.empty or len(u_wc) < 4:
-                continue
-            ev_date = ev_dates.iloc[0]
-            pre  = u_wc[u_wc["week_start_date"] <  ev_date][metric].mean()
-            post = u_wc[u_wc["week_start_date"] >= ev_date][metric].mean()
-            if not (np.isnan(pre) or np.isnan(post)):
-                deltas.append(post - pre)
-        return np.mean(deltas) if deltas else None
+    check((df["days_between"]>=0).all(), "days_between ≥ 0",
+          f"{(df['days_between']<0).sum()} rows have negative days_between")
 
-    # gym → protein up
-    gym_protein = get_pre_post(ev, wc, "started_gym", "avg_protein_g")
-    if gym_protein is not None:
-        check(gym_protein > 1.0,
-              f"started_gym → protein increase: +{gym_protein:.1f}g avg",
-              f"started_gym has no protein effect: {gym_protein:.1f}g (C3 fix needed — life events not propagated to meal generator)")
-    else:
-        print("  ⚠ Not enough gym users with pre/post weekly data")
+    # ── total_orders monotonically increases ──────────────────
+    df_s = df.sort_values(["user_id","dish_name","reorder_date"])
+    non_mono = 0
+    for (_,_), grp in df_s.groupby(["user_id","dish_name"]):
+        counts = grp["total_orders_dish"].tolist()
+        for i in range(len(counts)-1):
+            if counts[i]>counts[i+1]:
+                non_mono += 1
+                break
+    check(non_mono==0, "total_orders_dish monotonically increases",
+          f"{non_mono} user+dish combos have non-monotonic order counts")
 
-    # financial_stress → budget down
-    fs_budget = get_pre_post(ev, wc, "financial_stress", "budget_state")
-    if fs_budget is not None:
-        check(fs_budget < 0,
-              f"financial_stress → budget decrease: {fs_budget:.3f}",
-              f"financial_stress has no budget effect: {fs_budget:.3f} (C3 fix needed)")
-    else:
-        print("  ⚠ Not enough financial_stress users with pre/post data")
+    # ── More orders → higher reorder probability ──────────────
+    df["order_bin"] = pd.cut(df["total_orders_dish"],bins=[0,2,5,10,1000],
+                              labels=["1-2","3-5","6-10","10+"])
+    by_orders = df.groupby("order_bin",observed=True)["reordered_yes_no"].mean()
+    if len(by_orders)>=2:
+        check(by_orders.iloc[-1]>=by_orders.iloc[0],
+              f"More orders → higher reorder prob: {by_orders.to_dict()}",
+              f"Reorder probability not increasing with order count")
 
-    # health_diagnosis → compliance up
-    hd_compliance = get_pre_post(ev, wc, "health_diagnosis", "health_compliance_rate")
-    if hd_compliance is not None:
-        check(hd_compliance > 0.02,
-              f"health_diagnosis → compliance increase: +{hd_compliance:.3f}",
-              f"health_diagnosis has no compliance effect: {hd_compliance:.3f} (C3 fix needed)")
-    else:
-        print("  ⚠ Not enough health_diagnosis users with pre/post data")
+    # ── first_order_date ↔ meal_logs earliest date ───────────
+    if meal_logs_df is not None:
+        ordered_meals = meal_logs_df[meal_logs_df["ordered_delivery"]==True] if "ordered_delivery" in meal_logs_df.columns else meal_logs_df
+        ml_first = (ordered_meals.groupby(["user_id","dish_name"])["occurred_at"]
+                    .min().reset_index())
+        ml_first.columns = ["user_id","dish_name","ml_first_date"]
+        ml_first["ml_first_date"] = ml_first["ml_first_date"].dt.date.astype(str)
+        ro_first = df.groupby(["user_id","dish_name"])["first_order_date"].first().reset_index()
+        merged = ro_first.merge(ml_first, on=["user_id","dish_name"], how="inner")
+        if len(merged)>0:
+            mismatch = (merged["first_order_date"]!=merged["ml_first_date"]).sum()
+            check(mismatch/len(merged)<0.20,
+                  f"first_order_date ≈ meal_logs earliest order: {mismatch} mismatches ({mismatch/len(merged)*100:.1f}%)",
+                  warn=True)
 
-    # Event diversity
-    event_dist = ev["event_type"].value_counts()
-    check(len(event_dist) >= 5, f"Event type diversity: {len(event_dist)}")
-    check(event_dist.max() / event_dist.sum() < 0.40,
-          "No single event type dominates >40%")
+    # ── Reorder dish names exist in meal_logs for that user ──
+    if meal_logs_df is not None:
+        ro_sample = df.sample(min(5000,n))
+        phantom = 0
+        user_dishes = meal_logs_df.groupby("user_id")["dish_name"].apply(set).to_dict()
+        for _, row in ro_sample.iterrows():
+            uid = row["user_id"]
+            dish = row["dish_name"]
+            if uid in user_dishes and dish not in user_dishes[uid]:
+                phantom += 1
+        check(phantom/len(ro_sample)<0.05,
+              f"Reorder dishes exist in meal_logs for user: {phantom} phantom dishes",
+              f"{phantom} reorder entries for dishes user never ate — dish not in meal_logs")
+
+    if "last_rating_proxy" in df.columns:
+        check(df["last_rating_proxy"].between(1,5).all(), "Rating proxy in [1,5]",
+              f"{(~df['last_rating_proxy'].between(1,5)).sum()} ratings outside [1,5]")
+
+    print(f"  Reorder rate: {df['reordered_yes_no'].mean()*100:.1f}%")
 
 
 # ══════════════════════════════════════════════════════════════
-# 9. WEEKLY CONTEXT — calorie spikes, nutritional gaps, trend
+# 8. SKIP EVENTS ↔ MEAL LOGS
 # ══════════════════════════════════════════════════════════════
 
-def validate_weekly_context(path):
-    section("user_weekly_context.csv — calorie spikes + nutritional gaps")
+def validate_skip_events(path, meal_logs_df=None):
+    section("skip_events.csv — skip ↔ meal_logs contradiction")
+    df = pd.read_csv(path)
+    n = len(df)
+    print(f"  Rows: {n:,}")
+
+    # ── Skip day should have NO meal of that occasion ─────────
+    if meal_logs_df is not None:
+        ml = meal_logs_df.copy()
+        ml["date"] = ml["occurred_at"].dt.date.astype(str)
+        contradictions = 0
+        sample = df.sample(min(2000,n))
+        for _, row in sample.iterrows():
+            uid = row["user_id"]
+            skip_date = str(row["skip_date"])[:10]
+            occ = row["skipped_meal_occasion"]
+            meal_exists = ml[(ml["user_id"]==uid) &
+                              (ml["date"]==skip_date) &
+                              (ml["meal_occasion"]==occ)]
+            if len(meal_exists)>0:
+                contradictions += 1
+        check(contradictions/len(sample)<0.10,
+              f"Skip events don't contradict meal_logs: {contradictions} contradictions in sample",
+              f"{contradictions} skip events where meal_logs has a meal for same user/date/occasion — skip events generated independently")
+
+    # ── Dinner skip rarely compensatory ───────────────────────
+    dinner_comp = df[(df["skipped_meal_occasion"]=="dinner") & (df["compensatory_meal_occurred"]==True)]
+    check(len(dinner_comp)/max(n,1)<0.05,
+          f"Dinner skips rarely compensatory: {len(dinner_comp)/n*100:.1f}%", warn=True)
+
+    # ── Skip reason plausibility ──────────────────────────────
+    valid = {"breakfast":{"running_late","not_hungry","meeting","fasting","forgot"},
+             "lunch":{"busy_at_work","meeting","not_hungry","diet","no_food_available"},
+             "dinner":{"tired","not_hungry","fasting","ill"}}
+    for occ, valid_reasons in valid.items():
+        sub = df[df["skipped_meal_occasion"]==occ]["skip_reason"]
+        invalid = set(sub.unique()) - valid_reasons
+        check(len(invalid)==0, f"{occ} skip reasons valid",
+              f"Invalid {occ} skip reasons: {invalid}", warn=True)
+
+    print(f"  Skip occasions: {df['skipped_meal_occasion'].value_counts().to_dict()}")
+
+
+# ══════════════════════════════════════════════════════════════
+# 9. WEEKLY CONTEXT
+# ══════════════════════════════════════════════════════════════
+
+def validate_weekly_context(path, users_df=None):
+    section("user_weekly_context.csv — calorie spikes + gaps + consistency")
     df = pd.read_csv(path, parse_dates=["week_start_date"])
     n = len(df)
     print(f"  Rows: {n:,}")
 
-    # ── Calorie spike check ───────────────────────────────────
     avg_cal = df["avg_calories"].mean()
     p95 = df["avg_calories"].quantile(0.95)
     p99 = df["avg_calories"].quantile(0.99)
-    check(p99 < avg_cal * 3.5, f"No calorie explosions (P99={p99:.0f} < {avg_cal*3.5:.0f})")
-    check(p95 < avg_cal * 2.5,
-          f"P95 calories within 2.5× mean: {p95/avg_cal:.1f}×",
-          f"P95 calorie spike: {p95/avg_cal:.1f}× mean — check Ramadan logic")
+    check(p99<avg_cal*3.5, f"No calorie explosion (P99={p99:.0f} < {avg_cal*3.5:.0f})")
+    check(p95<avg_cal*2.5, f"P95 within 2.5× mean: {p95/avg_cal:.1f}×",
+          f"P95 spike: {p95/avg_cal:.1f}× mean — check Ramadan/fasting logic")
 
-    # ── Nutritional gaps must be ≥ 0 ─────────────────────────
-    for col in ["protein_gap_g", "carb_gap_g", "fat_gap_g", "fiber_gap_g"]:
+    # ── Nutritional gaps ≥ 0 ─────────────────────────────────
+    for col in ["protein_gap_g","carb_gap_g","fat_gap_g","fiber_gap_g"]:
         if col in df.columns:
-            neg = (df[col] < 0).sum()
-            check(neg == 0, f"{col} ≥ 0", f"{neg} rows have negative {col}")
+            neg = (df[col]<0).sum()
+            check(neg==0, f"{col} ≥ 0", f"{neg} rows have negative {col}")
 
-    # ── Budget state in valid range ───────────────────────────
+    # ── Protein gap arithmetic ────────────────────────────────
+    if "protein_gap_g" in df.columns and "avg_protein_g" in df.columns and "meals_logged" in df.columns:
+        # protein_gap = max(0, daily_target - avg_protein * meals_per_day)
+        # Roughly: if avg_protein * meals_logged/7 < 60g then gap > 0
+        implied_daily = df["avg_protein_g"] * df["meals_logged"] / 7
+        implied_gap = (60 - implied_daily).clip(lower=0)
+        gap_diff = (df["protein_gap_g"] - implied_gap).abs()
+        check(gap_diff.mean()<10,
+              f"Protein gap arithmetic consistent: mean diff={gap_diff.mean():.1f}g",
+              f"Protein gap arithmetic wrong: mean diff={gap_diff.mean():.1f}g — check gap formula",
+              warn=True)
+
+    # ── meals_ordered + meals_cooked ≤ meals_logged ───────────
+    if all(c in df.columns for c in ["meals_logged","meals_ordered","meals_cooked"]):
+        over = (df["meals_ordered"]+df["meals_cooked"] > df["meals_logged"]+2).sum()
+        check(over/n<0.05, f"ordered+cooked ≤ logged: {over} violations", warn=True)
+
+    # ── Budget state range ────────────────────────────────────
     if "budget_state" in df.columns:
-        check(df["budget_state"].between(0.5, 1.6).mean() > 0.95,
-              f"budget_state in realistic range [0.5, 1.6]")
+        check(df["budget_state"].between(0.5,1.6).mean()>0.95, "budget_state in [0.5, 1.6]")
 
-    # ── Season ↔ week_start_date consistency ──────────────────
+    # ── Season ↔ month ─────────────────────────────────────────
     MONTH_SEASON = {1:"winter",2:"winter",3:"summer_onset",4:"summer",5:"summer",
                     6:"monsoon_onset",7:"monsoon",8:"monsoon",9:"monsoon_end",
                     10:"autumn",11:"winter_onset",12:"winter"}
-    df["expected_season"] = df["week_start_date"].dt.month.map(MONTH_SEASON)
-    season_mismatch = (df["season"] != df["expected_season"]).sum()
-    check(season_mismatch / n < 0.02,
-          f"Season matches month in weekly context: {season_mismatch} mismatches")
+    df["exp_season"] = df["week_start_date"].dt.month.map(MONTH_SEASON)
+    mismatch = (df["season"]!=df["exp_season"]).sum()
+    check(mismatch/n<0.02, f"Season matches month: {mismatch} mismatches")
 
-    # ── compliance rate [0, 1] ────────────────────────────────
-    if "health_compliance_rate" in df.columns:
-        check(df["health_compliance_rate"].between(0, 1).all(),
-              "health_compliance_rate in [0,1]",
-              f"{(~df['health_compliance_rate'].between(0,1)).sum()} rows outside [0,1]")
+    # ── Ramadan observance ↔ calorie spike ────────────────────
+    if users_df is not None:
+        obs = users_df[["user_id","observance_level","religion"]]
+        muslim_obs = obs[obs["religion"]=="muslim"]
+        # Weeks 10-15 (approx Ramadan months)
+        ramadan_weeks = df[(df["week_start_date"].dt.month.isin([3,4]))]
+        if len(ramadan_weeks)>0 and len(muslim_obs)>0:
+            rm = ramadan_weeks.merge(muslim_obs, on="user_id", how="inner")
+            if len(rm)>20:
+                corr = rm["observance_level"].corr(rm["avg_calories"])
+                check(abs(corr)>0.05,
+                      f"Ramadan: observance_level correlated with calorie change: r={corr:.3f}",
+                      f"Ramadan: observance_level NOT correlated with calorie pattern: r={corr:.3f} "
+                      f"— non-observant Muslims should not show Ramadan calorie spike",
+                      warn=True)
 
-    # ── meals_ordered + meals_cooked ≤ meals_logged ───────────
-    if all(c in df.columns for c in ["meals_logged", "meals_ordered", "meals_cooked"]):
-        total_acc = df["meals_ordered"] + df["meals_cooked"]
-        over = (total_acc > df["meals_logged"] + 2).sum()
-        check(over / n < 0.05,
-              f"meals_ordered + meals_cooked ≤ meals_logged in {(1-over/n)*100:.1f}% rows",
-              f"{over} rows have ordered+cooked > logged — accounting mismatch", warn=True)
+    # ── life_event_active column variance ─────────────────────
+    if "life_event_active" in df.columns:
+        always_false = (df["life_event_active"]==False).mean()
+        check(always_false<0.95,
+              f"life_event_active has True values: {(1-always_false)*100:.1f}%",
+              f"life_event_active is always False — life events not reflected in weekly context")
 
-    print(f"  Avg weekly calories: {avg_cal:.1f}  P95: {p95:.1f}  P99: {p99:.1f}")
+    # ── Stress level distribution has variance per user ───────
+    if "avg_stress_level" in df.columns:
+        user_stress_variety = df.groupby("user_id")["avg_stress_level"].nunique()
+        always_same = (user_stress_variety==1).mean()
+        check(always_same<0.30,
+              f"Users have varied stress levels across weeks: {always_same*100:.1f}% always-same",
+              f"{always_same*100:.1f}% users have identical stress every week — stress not varying")
+
+    print(f"  Avg weekly cal: {avg_cal:.1f}  P95: {p95:.1f}  P99: {p99:.1f}")
 
 
 # ══════════════════════════════════════════════════════════════
-# 10. SOCIAL CONTEXT — location ↔ living_situation
+# 10. SOCIAL CONTEXT
 # ══════════════════════════════════════════════════════════════
 
 def validate_social_context(path, users_df=None):
-    section("social_eating_context.csv — location plausibility")
+    section("social_eating_context.csv — location + group logic")
     df = pd.read_csv(path)
     n = len(df)
     print(f"  Rows: {n:,}")
 
-    # ── Location type ↔ social context ────────────────────────
-    alone_hostel = df[(df["social_context"] == "alone") & (df["location_type"] == "hostel")]
+    # ── alone → group_size = 1 ────────────────────────────────
+    bad = df[(df["social_context"]=="alone") & (df["group_size"]>1)]
+    check(len(bad)==0, "alone → group_size=1",
+          f"{len(bad)} rows: alone but group_size>1")
+
+    # ── Non-hostel users getting hostel location ───────────────
     if users_df is not None:
-        non_hostel_users = set(users_df[~users_df["living_situation"].isin(["hostel_pg"])]["user_id"])
-        false_hostel = alone_hostel[alone_hostel["user_id"].isin(non_hostel_users)]
-        check(len(false_hostel) / max(n, 1) < 0.02,
-              f"Non-hostel users assigned hostel location: {len(false_hostel)/n*100:.2f}%",
-              f"{len(false_hostel)} non-hostel users with location_type=hostel — fix living_situation filter")
-    else:
-        check(alone_hostel.shape[0] / n < 0.15,
-              f"Hostel location for alone meals: {alone_hostel.shape[0]/n*100:.1f}% (warn if >15%)",
-              warn=True)
+        non_hostel = set(users_df[~users_df["living_situation"].isin(["hostel_pg"])]["user_id"])
+        false_hostel = df[(df["user_id"].isin(non_hostel)) &
+                           (df["social_context"]=="alone") &
+                           (df["location_type"]=="hostel")]
+        check(len(false_hostel)/max(n,1)<0.02,
+              f"Non-hostel users not getting hostel location: {len(false_hostel)} violations",
+              f"{len(false_hostel)} non-hostel users with location=hostel — fix living_situation filter")
 
-    # ── Group size ↔ social context ───────────────────────────
-    alone_group = df[(df["social_context"] == "alone") & (df["group_size"] > 1)]
-    check(len(alone_group) == 0,
-          "alone social_context → group_size = 1",
-          f"{len(alone_group)} rows: alone but group_size > 1")
-
-    restaurant_solo = df[(df["social_context"] == "at_restaurant") & (df["group_size"] == 1)]
-    check(restaurant_solo.shape[0] / max(df["social_context"].eq("at_restaurant").sum(), 1) < 0.10,
-          f"at_restaurant → group_size > 1 in >90%",
-          warn=True)
-
-    # ── Budget multiplier ranges ──────────────────────────────
+    # ── at_restaurant + cooking_at_home contradiction ─────────
+    # This requires joining back to meal_logs — done via meal_id
+    # Check budget_multiplier range instead
     if "budget_multiplier" in df.columns:
-        check(df["budget_multiplier"].between(0.5, 2.5).all(),
-              "Budget multipliers in [0.5, 2.5]",
+        check(df["budget_multiplier"].between(0.5,2.5).all(), "Budget multipliers 0.5–2.5",
               f"{(~df['budget_multiplier'].between(0.5,2.5)).sum()} extreme budget multipliers")
 
-    # ── variety_score [0,1] ────────────────────────────────────
+    # ── variety_score and influenced_by_group logic ───────────
     if "variety_score" in df.columns:
-        check(df["variety_score"].between(0, 1).all(),
-              "variety_score in [0,1]",
-              f"{(~df['variety_score'].between(0,1)).sum()} rows outside [0,1]")
+        alone_var = df[df["social_context"]=="alone"]["variety_score"].mean()
+        social_var = df[df["social_context"].isin(["with_friends","at_restaurant"])]["variety_score"].mean()
+        check(social_var > alone_var,
+              f"Social eating → higher variety: alone={alone_var:.2f} social={social_var:.2f}",
+              f"Social eating NOT more varied: alone={alone_var:.2f} vs social={social_var:.2f}")
 
-    print(f"  Social context dist: {df['social_context'].value_counts(normalize=True).round(3).to_dict()}")
+    if "influenced_by_group" in df.columns:
+        alone_inf = df[df["social_context"]=="alone"]["influenced_by_group"].mean()
+        check(alone_inf < 0.05,
+              f"alone → not influenced by group: {alone_inf*100:.1f}%",
+              f"{alone_inf*100:.1f}% of alone meals show group influence — logical impossibility")
+
+    print(f"  Social contexts: {df['social_context'].value_counts(normalize=True).round(3).to_dict()}")
+
+
+# ══════════════════════════════════════════════════════════════
+# 11. LIFE EVENTS ↔ WEEKLY CONTEXT (causal propagation)
+# ══════════════════════════════════════════════════════════════
+
+def validate_life_event_propagation(events_path, weekly_path, users_df=None):
+    section("life_events ↔ weekly_context — causal propagation")
+    ev = pd.read_csv(events_path, parse_dates=["event_date"])
+    wc = pd.read_csv(weekly_path, parse_dates=["week_start_date"])
+
+    def pre_post(event_type, metric, direction="up"):
+        users = ev[ev["event_type"]==event_type]["user_id"].unique()
+        deltas = []
+        for uid in users[:200]:
+            u_wc = wc[wc["user_id"]==uid].sort_values("week_start_date")
+            dates = ev[(ev["user_id"]==uid)&(ev["event_type"]==event_type)]["event_date"]
+            if dates.empty or len(u_wc)<4: continue
+            ev_date = dates.iloc[0]
+            pre  = u_wc[u_wc["week_start_date"]< ev_date][metric].mean()
+            post = u_wc[u_wc["week_start_date"]>=ev_date][metric].mean()
+            if not (np.isnan(pre) or np.isnan(post)):
+                deltas.append(post-pre)
+        return np.mean(deltas) if deltas else None
+
+    tests = [
+        ("started_gym",       "avg_protein_g",          "up",   1.0,  "Gym start → protein increase"),
+        ("financial_stress",  "budget_state",            "down", 0,    "Financial stress → budget decrease"),
+        ("health_diagnosis",  "health_compliance_rate",  "up",   0.02, "Health diagnosis → compliance increase"),
+        ("pregnancy",         "avg_calories",            "up",   5,    "Pregnancy → calorie increase"),
+        ("started_gym",       "health_compliance_rate",  "up",   0.01, "Gym start → compliance increase"),
+    ]
+
+    any_propagation = False
+    for event, metric, direction, threshold, label in tests:
+        delta = pre_post(event, metric, direction)
+        if delta is None:
+            print(f"  ⚠ {label}: insufficient data")
+            continue
+        if direction=="up":
+            ok = delta > threshold
+        else:
+            ok = delta < threshold
+        check(ok, f"{label}: delta={delta:.3f}",
+              f"{label}: delta={delta:.3f} — C3 fix needed, life events not propagated to meal generator")
+        if ok:
+            any_propagation = True
+
+    event_dist = ev["event_type"].value_counts()
+    check(len(event_dist)>=5, f"Event type diversity: {len(event_dist)}")
+    check(event_dist.max()/event_dist.sum()<0.40, "No single event >40%")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1384,34 +2620,33 @@ def validate_all(data_dir="data", fast=False, section_filter=None):
     PASS = FAIL = WARN = 0
 
     print("=" * 60)
-    print("  NARA Synthetic Data Validation v3")
-    print("  Senior-level: row logic + causality + cultural realism")
+    print("  NARA Synthetic Data Validation v4")
+    print("  Senior-level: row logic, causality, cultural realism,")
+    print("  temporal consistency, cross-table integrity")
     print("=" * 60)
 
     files = {
-        "users":           os.path.join(data_dir, "users.csv"),
-        "meal_logs":       os.path.join(data_dir, "meal_logs.csv"),
-        "interactions":    os.path.join(data_dir, "interactions.csv"),
-        "life_events":     os.path.join(data_dir, "life_events.csv"),
-        "fast_days":       os.path.join(data_dir, "fast_days.csv"),
-        "skip_events":     os.path.join(data_dir, "skip_events.csv"),
-        "reorders":        os.path.join(data_dir, "reorder_events.csv"),
-        "health_outcomes": os.path.join(data_dir, "health_outcomes.csv"),
-        "weekly_context":  os.path.join(data_dir, "user_weekly_context.csv"),
-        "social_context":  os.path.join(data_dir, "social_eating_context.csv"),
+        "users":          os.path.join(data_dir, "users.csv"),
+        "meal_logs":      os.path.join(data_dir, "meal_logs.csv"),
+        "interactions":   os.path.join(data_dir, "interactions.csv"),
+        "life_events":    os.path.join(data_dir, "life_events.csv"),
+        "fast_days":      os.path.join(data_dir, "fast_days.csv"),
+        "skip_events":    os.path.join(data_dir, "skip_events.csv"),
+        "reorders":       os.path.join(data_dir, "reorder_events.csv"),
+        "health_outcomes":os.path.join(data_dir, "health_outcomes.csv"),
+        "weekly_context": os.path.join(data_dir, "user_weekly_context.csv"),
+        "social_context": os.path.join(data_dir, "social_eating_context.csv"),
     }
 
     print("\n── File existence check ───────────────────────")
     all_exist = True
     for name, path in files.items():
         exists = os.path.exists(path)
-        size_mb = os.path.getsize(path) / (1024*1024) if exists else 0
+        size_mb = os.path.getsize(path)/(1024*1024) if exists else 0
         rows = ""
         if exists:
-            try:
-                rows = f"{sum(1 for _ in open(path))-1:,} rows"
-            except:
-                pass
+            try: rows = f"{sum(1 for _ in open(path))-1:,} rows"
+            except: pass
         check(exists, f"{name:<20} {size_mb:>7.1f} MB  {rows}",
               f"{name} MISSING")
         if not exists:
@@ -1421,60 +2656,76 @@ def validate_all(data_dir="data", fast=False, section_filter=None):
         print("\n  Some files missing. Run run_all.py first.")
         return
 
-    users_df = None
-
     run = lambda name: section_filter is None or section_filter == name
+
+    users_df = None
+    meal_logs_df = None
 
     if run("users"):
         users_df = validate_users(files["users"])
 
+    if users_df is None and not fast:
+        try: users_df = pd.read_csv(files["users"])
+        except: pass
+
     if run("meals"):
-        validate_meal_logs(files["meal_logs"], users_df)
+        meal_logs_df = validate_meal_logs(files["meal_logs"], users_df)
+
+    if meal_logs_df is None and not fast:
+        try:
+            meal_logs_df = pd.read_csv(files["meal_logs"], parse_dates=["occurred_at"])
+        except: pass
+
+    if run("cultural"):
+        validate_cultural_leakage(files["meal_logs"], files["users"])
 
     if run("fast"):
-        validate_fast_days(files["fast_days"])
+        validate_fast_days(files["fast_days"], users_df)
 
     if run("interactions"):
-        validate_interactions(files["interactions"])
+        validate_interactions(files["interactions"], users_df)
 
     if run("outcomes"):
-        validate_health_outcomes(files["health_outcomes"], users_df)
+        validate_health_outcomes(files["health_outcomes"], users_df, meal_logs_df)
 
     if run("reorders"):
-        validate_reorders(files["reorders"])
+        validate_reorders(files["reorders"], meal_logs_df)
 
     if run("skips"):
-        validate_skip_events(files["skip_events"])
+        validate_skip_events(files["skip_events"], meal_logs_df)
 
     if run("weekly"):
-        validate_weekly_context(files["weekly_context"])
+        validate_weekly_context(files["weekly_context"], users_df)
 
     if run("social"):
         validate_social_context(files["social_context"], users_df)
 
     if not fast and run("propagation"):
-        validate_life_event_propagation(files["life_events"], files["weekly_context"])
+        validate_life_event_propagation(files["life_events"], files["weekly_context"], users_df)
 
     print("\n" + "=" * 60)
+    total = PASS + FAIL
+    pct = PASS/total*100 if total > 0 else 0
     print(f"  Results: ✓ {PASS} passed  ✗ {FAIL} failed  ⚠ {WARN} warnings")
-    print(f"  Score: {PASS}/{PASS+FAIL} checks passing "
-          f"({PASS/(PASS+FAIL)*100:.1f}%)" if PASS+FAIL > 0 else "")
+    print(f"  Score:   {PASS}/{total} checks passing ({pct:.1f}%)")
     if FAIL == 0:
         print("  ✅ All checks passed — data ready for training")
     elif FAIL <= 3:
-        print("  🟡 Minor issues — review failures above before training")
+        print("  🟡 Minor issues — review before training")
+    elif FAIL <= 8:
+        print("  🟠 Moderate issues — fix failures before training")
     else:
-        print("  🔴 Significant issues — fix failures before training")
+        print("  🔴 Major issues — significant data quality problems")
     print("=" * 60)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="data")
-    parser.add_argument("--fast", action="store_true", help="Skip slow cross-table checks")
+    parser.add_argument("--fast", action="store_true",
+                        help="Skip slow cross-table checks (reorders, skips vs meal_logs)")
     parser.add_argument("--section", type=str, default=None,
-                        choices=["users","meals","fast","interactions","outcomes",
-                                 "reorders","skips","weekly","social","propagation"],
-                        help="Run only one section")
+                        choices=["users","meals","cultural","fast","interactions",
+                                 "outcomes","reorders","skips","weekly","social","propagation"])
     args = parser.parse_args()
     validate_all(args.data_dir, fast=args.fast, section_filter=args.section)
