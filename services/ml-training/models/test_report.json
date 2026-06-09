@@ -1,0 +1,767 @@
+{
+  "passed": 141,
+  "failed": 5,
+  "skipped": 6,
+  "results": [
+    [
+      "ranker_logistic.file_exists",
+      "\u2713 PASS",
+      "path=./models\\ranker_logistic.joblib"
+    ],
+    [
+      "ranker_logistic.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_logistic.has_predict",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_logistic.has_predict_proba",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_logistic.has_metadata",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_logistic.inference_dummy",
+      "\u2713 PASS",
+      "output_shape=(1,)"
+    ],
+    [
+      "ranker_logistic.zero_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_logistic.extreme_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_logistic.not_degenerate",
+      "\u2713 PASS",
+      "unique_classes=3"
+    ],
+    [
+      "ranker_logistic.latency_p95",
+      "\u2713 PASS",
+      "p95=2.13ms target=20ms"
+    ],
+    [
+      "ranker_logistic.size_under_500mb",
+      "\u2713 PASS",
+      "size=0.0MB"
+    ],
+    [
+      "cold_start_knn.file_exists",
+      "\u2713 PASS",
+      "path=./models\\cold_start_knn.joblib"
+    ],
+    [
+      "cold_start_knn.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_knn.has_predict",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_knn.has_predict_proba",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_knn.has_metadata",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_knn.inference_dummy",
+      "\u2713 PASS",
+      "output_shape=(1,)"
+    ],
+    [
+      "cold_start_knn.zero_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_knn.extreme_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_knn.not_degenerate",
+      "\u2713 PASS",
+      "unique_classes=2"
+    ],
+    [
+      "cold_start_knn.latency_p95",
+      "\u2717 FAIL",
+      "p95=27.04ms target=15ms"
+    ],
+    [
+      "cold_start_knn.size_under_500mb",
+      "\u2713 PASS",
+      "size=1.0MB"
+    ],
+    [
+      "health_rf.file_exists",
+      "\u2713 PASS",
+      "path=./models\\health_rf.joblib"
+    ],
+    [
+      "health_rf.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_rf.has_predict",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_rf.has_predict_proba",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_rf.has_metadata",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_rf.inference_dummy",
+      "\u2713 PASS",
+      "output_shape=(1,)"
+    ],
+    [
+      "health_rf.zero_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_rf.extreme_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_rf.not_degenerate",
+      "\u2713 PASS",
+      "unique_classes=2"
+    ],
+    [
+      "health_rf.latency_p95",
+      "\u2717 FAIL",
+      "p95=66.94ms target=20ms"
+    ],
+    [
+      "health_rf.size_under_500mb",
+      "\u2713 PASS",
+      "size=66.7MB"
+    ],
+    [
+      "occasion_dt.file_exists",
+      "\u2713 PASS",
+      "path=./models\\occasion_dt.joblib"
+    ],
+    [
+      "occasion_dt.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_dt.has_predict",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_dt.has_predict_proba",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_dt.has_metadata",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_dt.inference_dummy",
+      "\u2713 PASS",
+      "output_shape=(1,)"
+    ],
+    [
+      "occasion_dt.zero_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_dt.extreme_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_dt.not_degenerate",
+      "\u2713 PASS",
+      "unique_classes=5"
+    ],
+    [
+      "occasion_dt.latency_p95",
+      "\u2713 PASS",
+      "p95=1.63ms target=5ms"
+    ],
+    [
+      "occasion_dt.size_under_500mb",
+      "\u2713 PASS",
+      "size=0.0MB"
+    ],
+    [
+      "occasion_rf.file_exists",
+      "\u2713 PASS",
+      "path=./models\\occasion_rf.joblib"
+    ],
+    [
+      "occasion_rf.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_rf.has_predict",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_rf.has_predict_proba",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_rf.has_metadata",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_rf.inference_dummy",
+      "\u2713 PASS",
+      "output_shape=(1,)"
+    ],
+    [
+      "occasion_rf.zero_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_rf.extreme_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_rf.not_degenerate",
+      "\u2713 PASS",
+      "unique_classes=5"
+    ],
+    [
+      "occasion_rf.latency_p95",
+      "\u2717 FAIL",
+      "p95=83.22ms target=20ms"
+    ],
+    [
+      "occasion_rf.size_under_500mb",
+      "\u2713 PASS",
+      "size=243.2MB"
+    ],
+    [
+      "reorder_logistic.file_exists",
+      "\u2713 PASS",
+      "path=./models\\reorder_logistic.joblib"
+    ],
+    [
+      "reorder_logistic.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_logistic.has_predict",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_logistic.has_predict_proba",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_logistic.has_metadata",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_logistic.inference_dummy",
+      "\u2713 PASS",
+      "output_shape=(1,)"
+    ],
+    [
+      "reorder_logistic.zero_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_logistic.extreme_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_logistic.not_degenerate",
+      "\u2713 PASS",
+      "unique_classes=2"
+    ],
+    [
+      "reorder_logistic.latency_p95",
+      "\u2713 PASS",
+      "p95=1.51ms target=10ms"
+    ],
+    [
+      "reorder_logistic.size_under_500mb",
+      "\u2713 PASS",
+      "size=0.0MB"
+    ],
+    [
+      "reorder_rf.file_exists",
+      "\u2713 PASS",
+      "path=./models\\reorder_rf.joblib"
+    ],
+    [
+      "reorder_rf.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_rf.has_predict",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_rf.has_predict_proba",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_rf.has_metadata",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_rf.inference_dummy",
+      "\u2713 PASS",
+      "output_shape=(1,)"
+    ],
+    [
+      "reorder_rf.zero_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_rf.extreme_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "reorder_rf.not_degenerate",
+      "\u2713 PASS",
+      "unique_classes=2"
+    ],
+    [
+      "reorder_rf.latency_p95",
+      "\u2717 FAIL",
+      "p95=69.20ms target=20ms"
+    ],
+    [
+      "reorder_rf.size_under_500mb",
+      "\u2713 PASS",
+      "size=137.6MB"
+    ],
+    [
+      "ranker_xgboost.file_exists",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_xgboost.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_xgboost.has_predict",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_xgboost.inference_dummy",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_xgboost.zero_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_xgboost.not_degenerate",
+      "\u2713 PASS",
+      "unique=3"
+    ],
+    [
+      "ranker_xgboost.latency_p95",
+      "\u2713 PASS",
+      "p95=3.87ms target=30ms"
+    ],
+    [
+      "ranker_xgboost.size_under_500mb",
+      "\u2713 PASS",
+      "42.9MB"
+    ],
+    [
+      "health_xgb.file_exists",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_xgb.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_xgb.has_predict",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_xgb.inference_dummy",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_xgb.zero_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_xgb.not_degenerate",
+      "\u2713 PASS",
+      "unique=2"
+    ],
+    [
+      "health_xgb.latency_p95",
+      "\u2713 PASS",
+      "p95=0.91ms target=25ms"
+    ],
+    [
+      "health_xgb.size_under_500mb",
+      "\u2713 PASS",
+      "2.6MB"
+    ],
+    [
+      "occasion_xgb.file_exists",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_xgb.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_xgb.has_predict",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_xgb.inference_dummy",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_xgb.zero_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "occasion_xgb.not_degenerate",
+      "\u2713 PASS",
+      "unique=4"
+    ],
+    [
+      "occasion_xgb.latency_p95",
+      "\u2713 PASS",
+      "p95=4.16ms target=25ms"
+    ],
+    [
+      "occasion_xgb.size_under_500mb",
+      "\u2713 PASS",
+      "29.7MB"
+    ],
+    [
+      "reorder_xgb.file_exists",
+      "\u2717 FAIL",
+      ""
+    ],
+    [
+      "ranker_lgbm.file_exists",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_lgbm.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_lgbm.inference_dummy",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_lgbm.zero_input",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "ranker_lgbm.latency_p95",
+      "\u2713 PASS",
+      "p95=2.63ms target=25ms"
+    ],
+    [
+      "ranker_lgbm.size_under_500mb",
+      "\u2713 PASS",
+      "166.4MB"
+    ],
+    [
+      "cold_start_mlp.file_exists",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_mlp.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_mlp.has_model_state",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_mlp.has_y_classes",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_mlp.has_test_metrics",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_mlp.accuracy_above_random",
+      "\u2713 PASS",
+      "accuracy=0.725"
+    ],
+    [
+      "cold_start_mlp.inference_dummy",
+      "\u2713 PASS",
+      "output=torch.Size([1, 5])"
+    ],
+    [
+      "cold_start_mlp.no_nan_output",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_wide_deep.file_exists",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_wide_deep.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_wide_deep.has_model_state",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_wide_deep.has_y_classes",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_wide_deep.has_test_metrics",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "cold_start_wide_deep.accuracy_above_random",
+      "\u2713 PASS",
+      "accuracy=0.768"
+    ],
+    [
+      "cold_start_wide_deep.inference_dummy",
+      "\u2713 PASS",
+      "output=torch.Size([1, 5])"
+    ],
+    [
+      "cold_start_wide_deep.no_nan_output",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "health_rules.diabetic_jalebi_noncompliant",
+      "\u2713 PASS",
+      "pred=0 expected=0"
+    ],
+    [
+      "health_rules.healthy_idli_compliant",
+      "\u2713 PASS",
+      "pred=1 expected=1"
+    ],
+    [
+      "health_rules.pcos_high_gi_noncompliant",
+      "\u2713 PASS",
+      "pred=0 expected=0"
+    ],
+    [
+      "health_rules.loads",
+      "\u2713 PASS",
+      ""
+    ],
+    [
+      "metrics.ranker_logistic.valid",
+      "\u2713 PASS",
+      "['val', 'test']"
+    ],
+    [
+      "metrics.ranker_xgboost.valid",
+      "\u2713 PASS",
+      "['val', 'test']"
+    ],
+    [
+      "metrics.ranker_lgbm.valid",
+      "\u2713 PASS",
+      "['val', 'test']"
+    ],
+    [
+      "metrics.cold_start_knn.valid",
+      "\u2713 PASS",
+      "['val', 'test']"
+    ],
+    [
+      "metrics.cold_start_mlp.valid",
+      "\u2713 PASS",
+      "['test']"
+    ],
+    [
+      "metrics.cold_start_wide_deep.valid",
+      "\u2713 PASS",
+      "['test']"
+    ],
+    [
+      "metrics.health_rules.valid",
+      "\u2713 PASS",
+      "['all']"
+    ],
+    [
+      "metrics.health_rf.valid",
+      "\u2713 PASS",
+      "['val', 'test']"
+    ],
+    [
+      "metrics.health_xgb_shap.valid",
+      "\u2713 PASS",
+      "['val', 'test']"
+    ],
+    [
+      "metrics.occasion_dt.valid",
+      "\u2713 PASS",
+      "['val', 'test']"
+    ],
+    [
+      "metrics.occasion_rf.valid",
+      "\u2713 PASS",
+      "['val', 'test']"
+    ],
+    [
+      "metrics.occasion_xgb.valid",
+      "\u2713 PASS",
+      "['val', 'test']"
+    ],
+    [
+      "metrics.reorder_logistic.valid",
+      "\u2713 PASS",
+      "['val', 'test']"
+    ],
+    [
+      "metrics.reorder_rf.valid",
+      "\u2713 PASS",
+      "['val', 'test']"
+    ],
+    [
+      "metrics.reorder_cox_xgb",
+      "- SKIP",
+      "file not found"
+    ],
+    [
+      "leakage.ranker_logistic.val_test_consistent",
+      "\u2713 PASS",
+      "val_f1=0.512 test_f1=0.512 diff=0.001"
+    ],
+    [
+      "leakage.ranker_xgboost.val_test_consistent",
+      "\u2713 PASS",
+      "val_f1=0.523 test_f1=0.524 diff=0.001"
+    ],
+    [
+      "leakage.health_rf.val_test_consistent",
+      "\u2713 PASS",
+      "val_f1=0.944 test_f1=0.944 diff=0.000"
+    ],
+    [
+      "leakage.occasion_rf.val_test_consistent",
+      "\u2713 PASS",
+      "val_f1=0.950 test_f1=0.949 diff=0.000"
+    ],
+    [
+      "onnx.ranker_xgboost_onnx",
+      "- SKIP",
+      ""
+    ],
+    [
+      "onnx.ranker_lgbm_onnx",
+      "- SKIP",
+      ""
+    ],
+    [
+      "onnx.health_xgb_onnx",
+      "- SKIP",
+      ""
+    ],
+    [
+      "onnx.occasion_xgb_onnx",
+      "- SKIP",
+      ""
+    ],
+    [
+      "onnx.reorder_xgb_onnx",
+      "- SKIP",
+      ""
+    ]
+  ]
+}
