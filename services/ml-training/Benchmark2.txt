@@ -1,0 +1,826 @@
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python recommendation_ranker/train_logistc.py
+C:\Python313\python.exe: can't open file 'C:\\Users\\Darsh\\OneDrive\\Desktop\\Nara\\services\\ml-training\\recommendation_ranker\\train_logistc.py': [Errno 2] No such file or directory
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python recommendation_ranker/train_logistic.py
+18:56:02 [INFO] nara.ranker.logistic — ============================================================
+18:56:02 [INFO] nara.ranker.logistic — Recommendation Ranker — Logistic Regression (Baseline)
+18:56:02 [INFO] nara.ranker.logistic — ============================================================
+18:56:02 [INFO] nara.ranker.logistic — Loading data...
+18:56:02 [INFO] nara.training — Loading interactions from ../../scripts/synthetic_data/data\interactions.csv
+18:56:40 [INFO] nara.training —   7,325,730 interactions loaded
+18:56:40 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+18:56:40 [INFO] nara.training —   5,000 users loaded
+18:56:40 [INFO] nara.training — Loading nutrition KB from ../../scripts/synthetic_data/data\nutrition_kb.csv
+18:56:40 [INFO] nara.training —   176 KB entries loaded
+18:57:33 [INFO] nara.ranker.logistic —   Numerical features:   ['context_time_of_day', 'context_day', 'context_budget', 'recommendation_rank', 'cuisine_affinity', 'price_match_score', 'user_health_match', 'age', 'health_literacy', 'habit_strength', 'bmi', 'gi_score', 'calories_kcal', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g']
+18:57:33 [INFO] nara.ranker.logistic —   Categorical features: ['context_season', 'context_stress', 'income_tier', 'region', 'cuisine_type']
+18:57:33 [INFO] nara.ranker.logistic —   Binary features:      ['is_vegetarian', 'was_top3']
+18:57:33 [INFO] nara.ranker.logistic —   Dataset shape: (7325730, 42)
+18:58:08 [INFO] nara.training — Encoder saved → ./models\encoders.joblib
+18:58:14 [INFO] nara.ranker.logistic —   Class distribution: {0: 5264621, 1: 1518240, 2: 542869}
+18:58:42 [INFO] nara.training —   Train: 5,128,011 | Val: 732,573 | Test: 1,465,146
+18:58:43 [INFO] nara.ranker.logistic — Training Logistic Regression...
+C:\Users\Darsh\AppData\Roaming\Python\Python313\site-packages\sklearn\linear_model\_logistic.py:1272: FutureWarning: 'multi_class' was deprecated in version 1.5 and will be removed in 1.8. From then on, it will always use 'multinomial'. Leave it to its default value to avoid this warning.
+  warnings.warn(
+19:00:32 [INFO] nara.ranker.logistic — Evaluating on validation set...
+19:00:35 [INFO] nara.training — [VAL] Accuracy=0.4558 | F1=0.5117 | Precision=0.6381 | Recall=0.4558 | AUC=0.6246
+19:00:35 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.81      0.51      0.63    526462
+           1       0.24      0.21      0.23    151824
+           2       0.12      0.59      0.20     54287
+
+    accuracy                           0.46    732573
+   macro avg       0.39      0.44      0.35    732573
+weighted avg       0.64      0.46      0.51    732573
+
+19:02:35 [INFO] nara.training — [VAL] NDCG@10=0.4461
+19:02:35 [INFO] nara.ranker.logistic — Evaluating on test set...
+19:02:37 [INFO] nara.training — [TEST] Accuracy=0.4563 | F1=0.5124 | Precision=0.6387 | Recall=0.4563 | AUC=0.6249
+19:02:37 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.81      0.51      0.63   1052924
+           1       0.24      0.21      0.23    303648
+           2       0.12      0.59      0.20    108574
+
+    accuracy                           0.46   1465146
+   macro avg       0.39      0.44      0.35   1465146
+weighted avg       0.64      0.46      0.51   1465146
+
+19:05:48 [INFO] nara.training — [TEST] NDCG@10=0.4720
+19:05:48 [INFO] nara.ranker.logistic — Top feature coefficients (order class):
+19:05:48 [INFO] nara.ranker.logistic — 
+            feature  coefficient
+recommendation_rank    -0.429958
+      is_vegetarian    -0.102573
+     context_budget     0.092927
+           was_top3    -0.084786
+          protein_g    -0.082267
+     context_stress    -0.045198
+            fiber_g     0.033968
+           gi_score    -0.027284
+              fat_g     0.019911
+            carbs_g     0.012811
+                age    -0.005826
+    health_literacy    -0.004626
+context_time_of_day    -0.004042
+                bmi    -0.003799
+      calories_kcal    -0.002840
+19:05:50 [INFO] nara.training — Confusion matrix saved → ./models\plots\ranker_logistic_cm.png
+19:05:51 [INFO] nara.training — Feature importance saved → ./models\plots\ranker_logistic_fi.png
+19:05:51 [INFO] nara.training — Model saved → ./models\ranker_logistic.joblib (0.0 MB)
+19:05:51 [INFO] nara.training — Metrics saved → ./models\ranker_logistic_metrics.json
+19:05:51 [INFO] nara.ranker.logistic — 
+============================================================
+19:05:51 [INFO] nara.ranker.logistic — SUMMARY — Ranker Logistic Regression
+19:05:51 [INFO] nara.ranker.logistic —   Test Accuracy : 0.4563
+19:05:51 [INFO] nara.ranker.logistic —   Test F1       : 0.5124
+19:05:51 [INFO] nara.ranker.logistic —   Test NDCG@10  : 0.4720016304058414
+19:05:51 [INFO] nara.ranker.logistic —   Model saved   : ./models\ranker_logistic.joblib
+
+========================================XGboost========================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python recommendation_ranker/xgboost.py       
+C:\Python313\python.exe: can't open file 'C:\\Users\\Darsh\\OneDrive\\Desktop\\Nara\\services\\ml-training\\recommendation_ranker\\xgboost.py': [Errno 2] No such file or directory
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python recommendation_ranker/train_xgboost.py
+17:43:11 [INFO] nara.ranker.xgboost — ============================================================
+17:43:11 [INFO] nara.ranker.xgboost — Recommendation Ranker — XGBoost (Mid)
+17:43:11 [INFO] nara.ranker.xgboost — ============================================================
+17:43:11 [INFO] nara.ranker.xgboost — Loading data...
+17:43:11 [INFO] nara.training — Loading interactions from ../../scripts/synthetic_data/data\interactions.csv
+17:43:28 [INFO] nara.training —   7,325,730 interactions loaded
+17:43:28 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+17:43:28 [INFO] nara.training —   5,000 users loaded
+17:43:28 [INFO] nara.training — Loading nutrition KB from ../../scripts/synthetic_data/data\nutrition_kb.csv
+17:43:28 [INFO] nara.training —   176 KB entries loaded
+17:44:54 [INFO] nara.ranker.xgboost —   Features: 33 | Samples: 7,325,730
+17:44:54 [INFO] nara.ranker.xgboost —   Class distribution: {0: 5264621, 1: 1518240, 2: 542869}
+17:45:19 [INFO] nara.training —   Train: 5,128,011 | Val: 732,573 | Test: 1,465,146
+17:45:19 [INFO] nara.ranker.xgboost — Training XGBoost...
+[0]     validation_0-mlogloss:1.08898
+[50]    validation_0-mlogloss:1.01697
+[100]   validation_0-mlogloss:1.01051
+[150]   validation_0-mlogloss:1.00760
+[200]   validation_0-mlogloss:1.00622
+[250]   validation_0-mlogloss:1.00521
+[300]   validation_0-mlogloss:1.00459
+[350]   validation_0-mlogloss:1.00425
+[400]   validation_0-mlogloss:1.00390
+[450]   validation_0-mlogloss:1.00361
+[499]   validation_0-mlogloss:1.00341
+17:53:59 [INFO] nara.ranker.xgboost —   Best iteration: 497
+17:54:07 [INFO] nara.training — [VAL] Accuracy=0.4621 | F1=0.5217 | Precision=0.6692 | Recall=0.4621 | AUC=0.6628
+17:54:07 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.84      0.50      0.62    526462
+           1       0.26      0.29      0.28    151824
+           2       0.13      0.62      0.22     54287
+
+    accuracy                           0.46    732573
+   macro avg       0.41      0.47      0.37    732573
+weighted avg       0.67      0.46      0.52    732573
+
+17:54:07 [INFO] nara.training — [VAL] NDCG@10=0.4919
+17:54:22 [INFO] nara.training — [TEST] Accuracy=0.4627 | F1=0.5225 | Precision=0.67 | Recall=0.4627 | AUC=0.6636
+17:54:23 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.84      0.50      0.62   1052924
+           1       0.27      0.29      0.28    303648
+           2       0.13      0.61      0.21    108574
+
+    accuracy                           0.46   1465146
+   macro avg       0.41      0.47      0.37   1465146
+weighted avg       0.67      0.46      0.52   1465146
+
+17:54:23 [INFO] nara.training — [TEST] NDCG@10=0.3107
+17:54:24 [INFO] nara.ranker.xgboost — 
+Top 20 features:
+             feature  importance
+            was_top3    0.450475
+ recommendation_rank    0.210680
+      context_budget    0.060312
+           protein_g    0.044192
+       is_vegetarian    0.029418
+       calories_kcal    0.026490
+            gi_score    0.025608
+             carbs_g    0.021755
+        has_diabetes    0.018825
+     has_prediabetes    0.016672
+      context_stress    0.016110
+               fat_g    0.014033
+             fiber_g    0.013897
+ context_time_of_day    0.008117
+         income_tier    0.003739
+         has_obesity    0.003004
+     health_literacy    0.002752
+         context_day    0.002752
+has_high_cholesterol    0.002338
+                 bmi    0.002325
+17:54:27 [INFO] nara.training — Confusion matrix saved → ./models\plots\ranker_xgboost_cm.png
+17:54:27 [INFO] nara.training — Feature importance saved → ./models\plots\ranker_xgboost_fi.png
+17:54:27 [INFO] nara.training — XGBoost model saved → ./models\ranker_xgboost.json
+17:54:27 [WARNING] nara.training — skl2onnx/onnxmltools not installed, skipping ONNX export
+17:54:27 [INFO] nara.training — Metrics saved → ./models\ranker_xgboost_metrics.json
+17:54:27 [INFO] nara.ranker.xgboost — 
+============================================================
+17:54:27 [INFO] nara.ranker.xgboost — SUMMARY — Ranker XGBoost
+17:54:27 [INFO] nara.ranker.xgboost —   Test Accuracy : 0.4627
+17:54:27 [INFO] nara.ranker.xgboost —   Test F1       : 0.5225
+17:54:27 [INFO] nara.ranker.xgboost —   Test NDCG@10  : 0.3107
+17:54:27 [INFO] nara.ranker.xgboost —   Model saved   : ./models\ranker_xgboost.json
+17:54:27 [INFO] nara.ranker.xgboost — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> 
+=======================LightGBM================================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python recommendation_ranker/evaluate_lightgbm.py
+Loading data...
+20:49:24 [INFO] nara.training — Loading interactions from ../../scripts/synthetic_data/data\interactions.csv
+20:49:47 [INFO] nara.training —   7,325,730 interactions loaded
+20:49:47 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+20:49:47 [INFO] nara.training —   5,000 users loaded
+20:49:47 [INFO] nara.training — Loading nutrition KB from ../../scripts/synthetic_data/data\nutrition_kb.csv
+20:49:47 [INFO] nara.training —   176 KB entries loaded
+Creating split...
+20:51:12 [INFO] nara.training —   Train: 5,128,011 | Val: 732,573 | Test: 1,465,146
+Loading model...
+Predicting...
+20:55:20 [INFO] nara.training — [TEST] Accuracy=0.4773 | F1=0.5295 | Precision=0.6454 | Recall=0.4773 | AUC=0.6317
+20:55:20 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.81      0.52      0.63   1052924
+           1       0.26      0.35      0.30    303648
+           2       0.13      0.47      0.21    108574
+
+    accuracy                           0.48   1465146
+   macro avg       0.40      0.45      0.38   1465146
+weighted avg       0.65      0.48      0.53   1465146
+
+
+Classification
+{'accuracy': 0.4773, 'f1': 0.5295, 'precision': 0.6454, 'recall': 0.4773, 'auc': 0.6317}
+
+NDCG using order probability
+20:57:48 [INFO] nara.training — [ORDER_ONLY] NDCG@10=0.4736
+{'ndcg_10': 0.47358934800107105}
+
+NDCG using click + 2*order
+21:00:10 [INFO] nara.training — [CLICK_PLUS_ORDER] NDCG@10=0.4740
+{'ndcg_10': 0.47404751485561625}
+
+
+===================COLDSTART============================================================
+====================================KNN================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara> cd C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python cold_start/train_knn.py                              
+18:06:46 [INFO] nara.cold_start.knn — ============================================================
+18:06:46 [INFO] nara.cold_start.knn — Cold Start — KNN (Baseline)
+18:06:46 [INFO] nara.cold_start.knn — ============================================================
+18:06:46 [INFO] nara.cold_start.knn — Loading data...
+18:06:46 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+18:06:47 [INFO] nara.training —   5,000 users loaded
+18:06:47 [INFO] nara.training — Loading meal logs from ../../scripts/synthetic_data/data\meal_logs.csv
+18:07:33 [INFO] nara.training —   4,657,962 meal logs loaded
+18:07:34 [INFO] nara.cold_start.knn —   Users with meal history: 5,000
+18:07:34 [INFO] nara.cold_start.knn —   Features: 34 | Samples: 5,000
+18:07:34 [INFO] nara.cold_start.knn —   Cuisine distribution:
+top_cuisine
+north_indian    2335
+comfort         1416
+south_indian     999
+bengali          241
+staple             8
+dessert            1
+Name: count, dtype: int64
+top_cuisine
+north_indian    2335
+comfort         1416
+south_indian     999
+bengali          241
+other              9
+Name: count, dtype: int64
+18:07:35 [INFO] nara.training —   Train: 3,500 | Val: 500 | Test: 1,000
+18:07:35 [INFO] nara.cold_start.knn — Training KNN (k=15)...
+18:07:46 [INFO] nara.training — [VAL] Accuracy=0.75 | F1=0.7461 | Precision=0.7455 | Recall=0.75
+18:07:46 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+     bengali       0.80      0.83      0.82        24
+     comfort       0.67      0.58      0.62       142
+north_indian       0.76      0.83      0.80       233
+       other       0.00      0.00      0.00         1
+south_indian       0.81      0.78      0.80       100
+
+    accuracy                           0.75       500
+   macro avg       0.61      0.61      0.61       500
+weighted avg       0.75      0.75      0.75       500
+
+18:07:46 [INFO] nara.cold_start.knn — [VAL] Top-3 accuracy: 0.9820
+18:07:46 [INFO] nara.training — [TEST] Accuracy=0.748 | F1=0.746 | Precision=0.7479 | Recall=0.748
+18:07:46 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+     bengali       0.84      0.67      0.74        48
+     comfort       0.67      0.64      0.65       283
+north_indian       0.75      0.83      0.79       467
+       other       0.00      0.00      0.00         2
+south_indian       0.83      0.74      0.79       200
+
+    accuracy                           0.75      1000
+   macro avg       0.62      0.58      0.59      1000
+weighted avg       0.75      0.75      0.75      1000
+
+18:07:46 [INFO] nara.cold_start.knn — [TEST] Top-3 accuracy: 0.9900
+18:07:50 [INFO] nara.training — Confusion matrix saved → ./models\plots\cold_start_knn_cm.png
+18:07:50 [INFO] nara.training — Model saved → ./models\cold_start_knn.joblib (0.9 MB)
+18:07:50 [INFO] nara.training — Metrics saved → ./models\cold_start_knn_metrics.json
+18:07:50 [INFO] nara.cold_start.knn — 
+============================================================
+18:07:50 [INFO] nara.cold_start.knn — SUMMARY — Cold Start KNN
+18:07:50 [INFO] nara.cold_start.knn —   Test Accuracy     : 0.748
+18:07:50 [INFO] nara.cold_start.knn —   Test Top-3 Acc    : 0.99
+18:07:50 [INFO] nara.cold_start.knn —   Test F1           : 0.746
+18:07:50 [INFO] nara.cold_start.knn —   Model saved       : ./models\cold_start_knn.joblib
+18:07:50 [INFO] nara.cold_start.knn — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> 
+
+
+==================MLP=============================================================================================
+
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python cold_start/train_mlp.py
+18:10:09 [INFO] nara.cold_start.mlp — ============================================================
+18:10:09 [INFO] nara.cold_start.mlp — Cold Start — Shallow MLP (Mid)
+18:10:09 [INFO] nara.cold_start.mlp — ============================================================
+18:10:09 [INFO] nara.cold_start.mlp — Loading data...
+18:10:09 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+18:10:09 [INFO] nara.training —   5,000 users loaded
+18:10:09 [INFO] nara.training — Loading meal logs from ../../scripts/synthetic_data/data\meal_logs.csv
+18:11:14 [INFO] nara.training —   4,657,962 meal logs loaded
+18:11:16 [INFO] nara.cold_start.mlp —   Cuisine distribution after merge:
+top_cuisine
+north_indian    2335
+comfort         1416
+south_indian     999
+bengali          241
+other              9
+Name: count, dtype: int64
+18:11:16 [INFO] nara.cold_start.mlp —   Features: 34 | Samples: 5,000 | Classes: 5
+<class 'numpy.ndarray'>
+[1 1 2 4 1 2 2 4 4 4]
+18:11:17 [INFO] nara.cold_start.mlp —   Train: 3,500 | Val: 500 | Test: 1,000
+18:11:17 [INFO] nara.cold_start.mlp —   Device: cpu
+18:11:23 [INFO] nara.cold_start.mlp —   Epoch  10 | Train loss: 1.0987 | Val loss: 1.0628 | Val acc: 0.6000
+18:11:24 [INFO] nara.cold_start.mlp —   Epoch  20 | Train loss: 0.9681 | Val loss: 0.9329 | Val acc: 0.6160
+18:11:26 [INFO] nara.cold_start.mlp —   Epoch  30 | Train loss: 0.8940 | Val loss: 0.8560 | Val acc: 0.6400
+18:11:27 [INFO] nara.cold_start.mlp —   Epoch  40 | Train loss: 0.8436 | Val loss: 0.7981 | Val acc: 0.6780
+18:11:29 [INFO] nara.cold_start.mlp —   Epoch  50 | Train loss: 0.7919 | Val loss: 0.7424 | Val acc: 0.7280
+18:11:29 [INFO] nara.training — [TEST] Accuracy=0.725 | F1=0.7092 | Precision=0.7571 | Recall=0.725
+18:11:29 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+     bengali       0.76      0.85      0.80        48
+     comfort       0.64      0.78      0.70       283
+north_indian       0.74      0.84      0.79       467
+       other       0.00      0.00      0.00         2
+south_indian       0.96      0.35      0.51       200
+
+    accuracy                           0.72      1000
+   macro avg       0.62      0.57      0.56      1000
+weighted avg       0.76      0.72      0.71      1000
+
+18:11:29 [INFO] nara.cold_start.mlp — [TEST] Top-3 accuracy: 0.9950
+18:11:32 [INFO] nara.training — Confusion matrix saved → ./models\plots\cold_start_mlp_cm.png
+18:11:32 [INFO] nara.training — Metrics saved → ./models\cold_start_mlp_metrics.json
+18:11:32 [INFO] nara.cold_start.mlp — 
+============================================================
+18:11:32 [INFO] nara.cold_start.mlp — SUMMARY — Cold Start MLP
+18:11:32 [INFO] nara.cold_start.mlp —   Test Accuracy  : 0.725
+18:11:32 [INFO] nara.cold_start.mlp —   Test Top-3 Acc : 0.995
+18:11:32 [INFO] nara.cold_start.mlp —   Test F1        : 0.7092
+18:11:32 [INFO] nara.cold_start.mlp —   Model saved    : ./models\cold_start_mlp.pt
+18:11:32 [INFO] nara.cold_start.mlp — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> 
+
+=======================================WIDE_DEEP=======================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python cold_start/train_wide_deep.py
+18:12:47 [INFO] nara.cold_start.wide_deep — ============================================================
+18:12:47 [INFO] nara.cold_start.wide_deep — Cold Start — Wide and Deep (Best)
+18:12:47 [INFO] nara.cold_start.wide_deep — ============================================================
+18:12:47 [INFO] nara.cold_start.wide_deep — Loading data...
+18:12:47 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+18:12:47 [INFO] nara.training —   5,000 users loaded
+18:12:47 [INFO] nara.training — Loading meal logs from ../../scripts/synthetic_data/data\meal_logs.csv
+18:13:50 [INFO] nara.training —   4,657,962 meal logs loaded
+18:13:52 [INFO] nara.cold_start.wide_deep —   Cuisine distribution after merge:
+top_cuisine
+north_indian    2335
+comfort         1416
+south_indian     999
+bengali          241
+other              9
+Name: count, dtype: int64
+18:13:52 [INFO] nara.cold_start.wide_deep —   Wide dim: 69 | Deep dim: 34
+18:13:52 [INFO] nara.cold_start.wide_deep —   Samples: 5,000 | Classes: 5
+18:13:53 [INFO] nara.cold_start.wide_deep —   Device: cpu
+18:14:03 [INFO] nara.cold_start.wide_deep —   Epoch  10 | Train: 0.8741 | Val: 0.8747 | Val acc: 0.6480
+18:14:06 [INFO] nara.cold_start.wide_deep —   Epoch  20 | Train: 0.7311 | Val: 0.7217 | Val acc: 0.7300
+18:14:09 [INFO] nara.cold_start.wide_deep —   Epoch  30 | Train: 0.6654 | Val: 0.6517 | Val acc: 0.7700
+18:14:12 [INFO] nara.cold_start.wide_deep —   Epoch  40 | Train: 0.6490 | Val: 0.6258 | Val acc: 0.7820
+18:14:16 [INFO] nara.cold_start.wide_deep —   Epoch  50 | Train: 0.6277 | Val: 0.6196 | Val acc: 0.7840
+18:14:16 [INFO] nara.training — [TEST] Accuracy=0.768 | F1=0.7615 | Precision=0.7854 | Recall=0.768
+18:14:16 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+     bengali       0.83      0.92      0.87        48
+     comfort       0.70      0.73      0.72       283
+north_indian       0.76      0.88      0.82       467
+       other       0.00      0.00      0.00         2
+south_indian       0.96      0.53      0.68       200
+
+    accuracy                           0.77      1000
+   macro avg       0.65      0.61      0.62      1000
+weighted avg       0.79      0.77      0.76      1000
+
+18:14:16 [INFO] nara.cold_start.wide_deep — [TEST] Top-3 accuracy: 0.9960
+18:14:18 [INFO] nara.training — Confusion matrix saved → ./models\plots\cold_start_wide_deep_cm.png
+18:14:18 [INFO] nara.training — Metrics saved → ./models\cold_start_wide_deep_metrics.json
+18:14:18 [INFO] nara.cold_start.wide_deep — 
+============================================================
+18:14:18 [INFO] nara.cold_start.wide_deep — SUMMARY — Cold Start Wide and Deep
+18:14:18 [INFO] nara.cold_start.wide_deep —   Test Accuracy  : 0.768
+18:14:18 [INFO] nara.cold_start.wide_deep —   Test Top-3 Acc : 0.996
+18:14:18 [INFO] nara.cold_start.wide_deep —   Test F1        : 0.7615
+18:14:18 [INFO] nara.cold_start.wide_deep —   Model saved    : ./models\cold_start_wide_deep.pt
+18:14:18 [INFO] nara.cold_start.wide_deep — =========================
+
+
+===============================Health-Scorer====================================================================
+=======================Rules===================================================================================
+
+
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python health_scorer/train_rules.py 
+18:15:44 [INFO] nara.health_scorer.rules — ============================================================
+18:15:44 [INFO] nara.health_scorer.rules — Health Scorer — Rule-based Baseline
+18:15:44 [INFO] nara.health_scorer.rules — ============================================================
+18:15:44 [INFO] nara.health_scorer.rules — Loading data...
+18:15:44 [INFO] nara.training — Loading meal logs from ../../scripts/synthetic_data/data\meal_logs.csv
+18:16:47 [INFO] nara.training —   4,657,962 meal logs loaded
+18:16:47 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+18:16:47 [INFO] nara.training —   5,000 users loaded
+18:17:23 [INFO] nara.health_scorer.rules —   Samples: 4,657,962
+18:17:23 [INFO] nara.health_scorer.rules —   Compliance rate: 0.758
+18:21:16 [INFO] nara.training — [ALL] Accuracy=0.7627 | F1=0.7109 | Precision=0.7207 | Recall=0.7627
+18:21:19 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.53      0.16      0.25   1127044
+           1       0.78      0.96      0.86   3530918
+
+    accuracy                           0.76   4657962
+   macro avg       0.66      0.56      0.55   4657962
+weighted avg       0.72      0.76      0.71   4657962
+
+18:21:19 [INFO] nara.health_scorer.rules — 
+Per-condition compliance accuracy:
+18:21:19 [INFO] nara.health_scorer.rules —   has_diabetes                   n=1,103,509  acc=0.801
+18:21:19 [INFO] nara.health_scorer.rules —   has_prediabetes                n=989,844  acc=0.789
+18:21:19 [INFO] nara.health_scorer.rules —   has_hypertension               n=1,515,653  acc=0.780
+18:21:19 [INFO] nara.health_scorer.rules —   has_obesity                    n=750,307  acc=0.767
+18:21:19 [INFO] nara.health_scorer.rules —   has_pcos                       n=494,562  acc=0.649
+18:21:19 [INFO] nara.health_scorer.rules —   has_high_cholesterol           n=1,054,901  acc=0.798
+18:21:19 [INFO] nara.health_scorer.rules —   has_thyroid                    n=256,502  acc=0.782
+18:21:20 [INFO] nara.health_scorer.rules —   has_ibs                        n=356,775  acc=0.753
+18:21:20 [INFO] nara.health_scorer.rules —   has_anemia                     n=846,726  acc=0.755
+18:21:20 [INFO] nara.health_scorer.rules — 
+Sample non-compliant explanations:
+18:21:20 [INFO] nara.health_scorer.rules —   egg biryani                    → Calories=698.2 flagged for hypertension
+18:21:20 [INFO] nara.health_scorer.rules —   dal baati churma               → Calories=1071.6 flagged for hypertension
+18:21:20 [INFO] nara.health_scorer.rules —   mutton curry                   → Calories=898.2 flagged for hypertension
+18:21:20 [INFO] nara.health_scorer.rules —   mutton curry                   → Calories=801.0 flagged for hypertension
+18:21:20 [INFO] nara.health_scorer.rules —   rogan josh                     → Calories=580.7 flagged for hypertension
+18:21:26 [INFO] nara.training — Confusion matrix saved → ./models\plots\health_rules_cm.png
+18:21:26 [INFO] nara.health_scorer.rules — Rules saved → ./models\health_rules.json
+18:21:26 [INFO] nara.training — Metrics saved → ./models\health_rules_metrics.json
+18:21:26 [INFO] nara.health_scorer.rules — 
+============================================================
+18:21:26 [INFO] nara.health_scorer.rules — SUMMARY — Health Scorer Rules
+18:21:26 [INFO] nara.health_scorer.rules —   Accuracy  : 0.7627
+18:21:26 [INFO] nara.health_scorer.rules —   Precision : 0.7207
+18:21:26 [INFO] nara.health_scorer.rules —   Recall    : 0.7627
+18:21:26 [INFO] nara.health_scorer.rules —   F1        : 0.7109
+
+================================Meal Occassion Classifier==============================================
+========================Decision tree=================================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python meal_occasion_classifier/train_decision_tree.py
+21:26:50 [INFO] nara.occasion.dt — ============================================================
+21:26:50 [INFO] nara.occasion.dt — Meal Occasion Classifier — Decision Tree (Baseline)
+21:26:50 [INFO] nara.occasion.dt — ============================================================
+21:26:50 [INFO] nara.occasion.dt — Loading data...
+21:26:50 [INFO] nara.training — Loading meal logs from ../../scripts/synthetic_data/data\meal_logs.csv
+21:27:05 [INFO] nara.training —   4,657,962 meal logs loaded
+21:27:05 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+21:27:05 [INFO] nara.training —   5,000 users loaded
+21:27:18 [INFO] nara.occasion.dt —   Features: 17 | Samples: 4,657,962
+21:27:18 [INFO] nara.occasion.dt —   Class distribution:
+meal_occasion
+dinner        1388531
+lunch         1311865
+breakfast     1205529
+snack          708279
+late_night      43758
+21:27:34 [INFO] nara.training —   Train: 3,260,572 | Val: 465,797 | Test: 931,593
+21:27:34 [INFO] nara.occasion.dt — Training Decision Tree...
+21:27:56 [INFO] nara.occasion.dt —   Tree depth: 8 | Leaves: 119
+21:27:56 [INFO] nara.occasion.dt — 
+Top-level decision rules:
+|--- hour <= -0.79
+|   |--- class: breakfast
+|--- hour >  -0.79
+|   |--- hour <= 0.82
+|   |   |--- hour <= 0.02
+|   |   |   |--- hour <= -0.59
+|   |   |   |   |--- truncated branch of depth 5
+|   |   |   |--- hour >  -0.59
+|   |   |   |   |--- truncated branch of depth 5
+|   |   |--- hour >  0.02
+|   |   |   |--- hour <= 0.62
+|   |   |   |   |--- truncated branch of depth 5
+|   |   |   |--- hour >  0.62
+|   |   |   |   |--- truncated branch of depth 5
+|   |--- hour >  0.82
+|   |   |--- age <= -0.56
+|   |   |   |--- hour <= 1.22
+|   |   |   |   |--- truncated branch of depth 5
+|   |   |   |--- hour >  1.22
+|   |   |   |   |--- truncated branch of depth 5
+|   |   |--- age >  -0.56
+|   |   |   |--- hour <= 1.02
+|   |   |   |   |--- truncated branch of depth 5
+|   |   |   |--- hour >  1.02
+|   |   |   |   |--- truncated branch of depth 5
+
+21:28:01 [INFO] nara.training — [VAL] Accuracy=0.935 | F1=0.9475 | Precision=0.9705 | Recall=0.935
+21:28:05 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+   breakfast       1.00      0.99      1.00    120553
+      dinner       0.99      0.83      0.90    138853
+  late_night       0.18      0.99      0.31      4376
+       lunch       0.99      0.97      0.98    131187
+       snack       0.89      0.98      0.93     70828
+
+    accuracy                           0.93    465797
+   macro avg       0.81      0.95      0.82    465797
+weighted avg       0.97      0.93      0.95    465797
+
+21:28:16 [INFO] nara.training — [TEST] Accuracy=0.9346 | F1=0.9472 | Precision=0.9704 | Recall=0.9346
+21:28:24 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+   breakfast       1.00      0.99      1.00    241106
+      dinner       0.99      0.82      0.90    277706
+  late_night       0.18      0.99      0.31      8752
+       lunch       0.99      0.97      0.98    262373
+       snack       0.89      0.98      0.93    141656
+
+    accuracy                           0.93    931593
+   macro avg       0.81      0.95      0.82    931593
+weighted avg       0.97      0.93      0.95    931593
+
+21:28:24 [INFO] nara.occasion.dt — 
+Top 10 features:
+         feature   importance
+            hour 8.600630e-01
+             age 1.284747e-01
+      occupation 5.496866e-03
+      is_weekend 3.081961e-03
+     day_of_week 2.559160e-03
+ commute_minutes 3.188774e-04
+           month 2.096323e-06
+    stress_level 1.505854e-06
+ is_festival_day 1.445812e-06
+living_situation 3.799825e-07
+21:28:28 [INFO] nara.training — Confusion matrix saved → ./models\plots\occasion_dt_cm.png
+21:28:28 [INFO] nara.training — Feature importance saved → ./models\plots\occasion_dt_fi.png
+21:28:28 [INFO] nara.training — Model saved → ./models\occasion_dt.joblib (0.0 MB)
+21:28:28 [INFO] nara.training — Metrics saved → ./models\occasion_dt_metrics.json
+21:28:28 [INFO] nara.occasion.dt — 
+============================================================
+21:28:28 [INFO] nara.occasion.dt — SUMMARY — Occasion Decision Tree
+21:28:28 [INFO] nara.occasion.dt —   Test Accuracy : 0.9346
+21:28:28 [INFO] nara.occasion.dt —   Test F1       : 0.9472
+21:28:28 [INFO] nara.occasion.dt —   Model saved   : ./models\occasion_dt.joblib
+21:28:28 [INFO] nara.occasion.dt — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> 
+
+=====================Random Forest====================================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python meal_occasion_classifier/train_random_forest.py
+21:29:49 [INFO] nara.occasion.rf — ============================================================
+21:29:49 [INFO] nara.occasion.rf — Meal Occasion Classifier — Random Forest (Mid)
+21:29:49 [INFO] nara.occasion.rf — ============================================================
+21:29:49 [INFO] nara.occasion.rf — Loading data...
+21:29:49 [INFO] nara.training — Loading meal logs from ../../scripts/synthetic_data/data\meal_logs.csv
+21:30:05 [INFO] nara.training —   4,657,962 meal logs loaded
+21:30:05 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+21:30:05 [INFO] nara.training —   5,000 users loaded
+21:30:17 [INFO] nara.occasion.rf —   Features: 17 | Samples: 4,657,962
+21:30:32 [INFO] nara.training —   Train: 3,260,572 | Val: 465,797 | Test: 931,593
+21:30:32 [INFO] nara.occasion.rf — Training Random Forest...
+21:38:23 [INFO] nara.occasion.rf —   OOB Score: 0.9374
+21:38:37 [INFO] nara.training — [VAL] Accuracy=0.9381 | F1=0.9495 | Precision=0.9706 | Recall=0.9381 | AUC=0.9944
+21:38:45 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+   breakfast       1.00      0.99      1.00    120553
+      dinner       0.99      0.84      0.91    138853
+  late_night       0.19      0.99      0.32      4376
+       lunch       0.99      0.97      0.98    131187
+       snack       0.89      0.98      0.93     70828
+
+    accuracy                           0.94    465797
+   macro avg       0.81      0.95      0.83    465797
+weighted avg       0.97      0.94      0.95    465797
+
+21:39:18 [INFO] nara.training — [TEST] Accuracy=0.9377 | F1=0.9492 | Precision=0.9704 | Recall=0.9377 | AUC=0.9944
+21:39:33 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+   breakfast       1.00      0.99      1.00    241106
+      dinner       0.99      0.84      0.91    277706
+  late_night       0.19      0.99      0.32      8752
+       lunch       0.99      0.97      0.98    262373
+       snack       0.89      0.98      0.93    141656
+
+    accuracy                           0.94    931593
+   macro avg       0.81      0.95      0.83    931593
+weighted avg       0.97      0.94      0.95    931593
+
+21:39:33 [INFO] nara.occasion.rf — 
+Per-occasion accuracy:
+21:39:33 [INFO] nara.occasion.rf —   breakfast       n=241,106  acc=0.994
+21:39:33 [INFO] nara.occasion.rf —   lunch           n=262,373  acc=0.971
+21:39:33 [INFO] nara.occasion.rf —   snack           n=141,656  acc=0.978
+21:39:33 [INFO] nara.occasion.rf —   dinner          n=277,706  acc=0.835
+21:39:33 [INFO] nara.occasion.rf —   late_night      n= 8,752  acc=0.989
+21:39:37 [INFO] nara.training — Confusion matrix saved → ./models\plots\occasion_rf_cm.png
+21:39:38 [INFO] nara.training — Feature importance saved → ./models\plots\occasion_rf_fi.png
+21:39:39 [INFO] nara.training — Model saved → ./models\occasion_rf.joblib (231.9 MB)
+21:39:39 [INFO] nara.training — Metrics saved → ./models\occasion_rf_metrics.json
+21:39:39 [INFO] nara.occasion.rf — 
+============================================================
+21:39:39 [INFO] nara.occasion.rf — SUMMARY — Occasion Random Forest
+21:39:39 [INFO] nara.occasion.rf —   OOB Score     : 0.9374
+21:39:39 [INFO] nara.occasion.rf —   Test Accuracy : 0.9377
+21:39:39 [INFO] nara.occasion.rf —   Test F1       : 0.9492
+21:39:39 [INFO] nara.occasion.rf —   Model saved   : ./models\occasion_rf.joblib
+21:39:39 [INFO] nara.occasion.rf — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training>
+
+=====================XGBOOST==============================================================================
+
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python meal_occasion_classifier/train_xgboost.py      
+21:44:54 [INFO] nara.occasion.xgboost — ============================================================
+21:44:54 [INFO] nara.occasion.xgboost — Meal Occasion Classifier — XGBoost (Best)
+21:44:54 [INFO] nara.occasion.xgboost — ============================================================
+21:44:54 [INFO] nara.occasion.xgboost — Loading data...
+21:44:54 [INFO] nara.training — Loading meal logs from ../../scripts/synthetic_data/data\meal_logs.csv
+21:45:39 [INFO] nara.training —   4,657,962 meal logs loaded
+21:45:39 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+21:45:39 [INFO] nara.training —   5,000 users loaded
+21:46:09 [INFO] nara.occasion.xgboost —   Features: 17 | Samples: 4,657,962
+21:46:09 [INFO] nara.occasion.xgboost —   Classes: ['breakfast', 'dinner', 'late_night', 'lunch', 'snack']
+21:46:27 [INFO] nara.training —   Train: 3,260,572 | Val: 465,797 | Test: 931,593
+21:46:27 [INFO] nara.occasion.xgboost — Training XGBoost...
+[0]     validation_0-mlogloss:1.34334
+[50]    validation_0-mlogloss:0.19979
+[100]   validation_0-mlogloss:0.08857
+[150]   validation_0-mlogloss:0.06979
+[200]   validation_0-mlogloss:0.06648
+[250]   validation_0-mlogloss:0.06533
+[300]   validation_0-mlogloss:0.06477
+[350]   validation_0-mlogloss:0.06433
+[400]   validation_0-mlogloss:0.06394
+[450]   validation_0-mlogloss:0.06364
+[499]   validation_0-mlogloss:0.06336
+21:55:38 [INFO] nara.occasion.xgboost —   Best iteration: 499
+21:56:04 [INFO] nara.training — [VAL] Accuracy=0.974 | F1=0.9728 | Precision=0.9727 | Recall=0.974
+21:56:09 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+   breakfast       1.00      1.00      1.00    120553
+      dinner       0.96      0.99      0.97    138853
+  late_night       0.68      0.36      0.47      4376
+       lunch       0.98      0.99      0.98    131187
+       snack       0.96      0.93      0.94     70828
+
+    accuracy                           0.97    465797
+   macro avg       0.92      0.85      0.87    465797
+weighted avg       0.97      0.97      0.97    465797
+
+21:56:58 [INFO] nara.training — [TEST] Accuracy=0.9742 | F1=0.9731 | Precision=0.973 | Recall=0.9742
+21:57:11 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+   breakfast       1.00      1.00      1.00    241106
+      dinner       0.96      0.98      0.97    277706
+  late_night       0.68      0.37      0.48      8752
+       lunch       0.98      0.99      0.98    262373
+       snack       0.96      0.93      0.94    141656
+
+    accuracy                           0.97    931593
+   macro avg       0.92      0.85      0.87    931593
+weighted avg       0.97      0.97      0.97    931593
+
+21:57:11 [INFO] nara.occasion.xgboost — 
+Per-occasion F1:
+21:57:17 [INFO] nara.occasion.xgboost —   breakfast       n=241,106  F1=0.997
+21:57:24 [INFO] nara.occasion.xgboost —   dinner          n=277,706  F1=0.973
+21:57:31 [INFO] nara.occasion.xgboost —   late_night      n= 8,752  F1=0.477
+21:57:38 [INFO] nara.occasion.xgboost —   lunch           n=262,373  F1=0.983
+21:57:43 [INFO] nara.occasion.xgboost —   snack           n=141,656  F1=0.944
+21:57:51 [INFO] nara.training — Confusion matrix saved → ./models\plots\occasion_xgb_cm.png
+21:57:52 [INFO] nara.training — Feature importance saved → ./models\plots\occasion_xgb_fi.png
+21:57:53 [INFO] nara.training — XGBoost model saved → ./models\occasion_xgb.json
+21:57:53 [WARNING] nara.training — skl2onnx/onnxmltools not installed, skipping ONNX export
+21:57:53 [INFO] nara.training — Metrics saved → ./models\occasion_xgb_metrics.json
+21:57:53 [INFO] nara.occasion.xgboost — 
+============================================================
+21:57:53 [INFO] nara.occasion.xgboost — SUMMARY — Occasion XGBoost
+21:57:53 [INFO] nara.occasion.xgboost —   Test Accuracy : 0.9742
+
+====================================================reorder_prediction===================================
+=====================================Logistic============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python reorder_prediction/train_logistic.py
+22:11:56 [INFO] nara.reorder.logistic — ============================================================
+22:11:56 [INFO] nara.reorder.logistic — Reorder Prediction — Logistic Regression (Baseline)
+22:11:56 [INFO] nara.reorder.logistic — ============================================================
+22:11:56 [INFO] nara.reorder.logistic — Loading data...
+22:11:56 [INFO] nara.training — Loading reorder events from ../../scripts/synthetic_data/data\reorder_events.csv
+22:12:01 [INFO] nara.training —   2,196,684 reorder events loaded
+22:12:01 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+22:12:01 [INFO] nara.training —   5,000 users loaded
+22:12:10 [INFO] nara.reorder.logistic —   Features: 14 | Samples: 2,196,684
+22:12:10 [INFO] nara.reorder.logistic —   Reorder rate: 0.735
+22:12:14 [INFO] nara.training —   Train: 1,537,678 | Val: 219,669 | Test: 439,337
+22:12:14 [INFO] nara.reorder.logistic — Training Logistic Regression...
+22:12:25 [INFO] nara.training — [VAL] Accuracy=0.7353 | F1=0.6236 | Precision=0.6795 | Recall=0.7353 | AUC=0.7099
+22:12:25 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.52      0.00      0.00     58143
+           1       0.74      1.00      0.85    161526
+
+    accuracy                           0.74    219669
+   macro avg       0.63      0.50      0.42    219669
+weighted avg       0.68      0.74      0.62    219669
+
+22:12:26 [INFO] nara.training — [TEST] Accuracy=0.7354 | F1=0.6237 | Precision=0.6883 | Recall=0.7354 | AUC=0.709
+22:12:26 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.56      0.00      0.00    116286
+           1       0.74      1.00      0.85    323051
+
+    accuracy                           0.74    439337
+   macro avg       0.65      0.50      0.42    439337
+weighted avg       0.69      0.74      0.62    439337
+
+22:12:26 [INFO] nara.reorder.logistic — 
+Top positive reorder drivers:
+          feature  coefficient
+total_orders_dish     0.757177
+     days_between     0.269249
+last_rating_proxy     0.114516
+    is_vegetarian     0.064234
+   stress_profile     0.028694
+22:12:26 [INFO] nara.reorder.logistic — 
+Top negative reorder drivers:
+       feature  coefficient
+habit_strength    -0.013335
+   income_tier    -0.014853
+    occupation    -0.015375
+           age    -0.018424
+        season    -0.018568
+22:12:28 [INFO] nara.training — Confusion matrix saved → ./models\plots\reorder_logistic_cm.png
+22:12:28 [INFO] nara.training — Model saved → ./models\reorder_logistic.joblib (0.0 MB)
+22:12:28 [INFO] nara.training — Metrics saved → ./models\reorder_logistic_metrics.json
+22:12:28 [INFO] nara.reorder.logistic — 
+============================================================
+22:12:28 [INFO] nara.reorder.logistic — SUMMARY — Reorder Logistic Regression
+22:12:28 [INFO] nara.reorder.logistic —   Test Accuracy : 0.7354
+22:12:28 [INFO] nara.reorder.logistic —   Test F1       : 0.6237
+22:12:28 [INFO] nara.reorder.logistic —   Test AUC      : 0.709
+22:12:28 [INFO] nara.reorder.logistic —   Model saved   : ./models\reorder_logistic.joblib
+22:12:28 [INFO] nara.reorder.logistic — ============================
+
+
+
+===================================RandomForest====================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> python reorder_prediction/train_random_forest.py
+22:13:36 [INFO] nara.reorder.rf — ============================================================
+22:13:36 [INFO] nara.reorder.rf — Reorder Prediction — Random Forest (Mid)
+22:13:36 [INFO] nara.reorder.rf — ============================================================
+22:13:36 [INFO] nara.reorder.rf — Loading data...
+22:13:36 [INFO] nara.training — Loading reorder events from ../../scripts/synthetic_data/data\reorder_events.csv
+22:13:39 [INFO] nara.training —   2,196,684 reorder events loaded
+22:13:39 [INFO] nara.training — Loading users from ../../scripts/synthetic_data/data\users.csv
+22:13:40 [INFO] nara.training —   5,000 users loaded
+22:13:48 [INFO] nara.reorder.rf —   Features: 14 | Samples: 2,196,684
+22:13:48 [INFO] nara.reorder.rf —   Reorder rate: 0.735
+22:13:55 [INFO] nara.training —   Train: 1,537,678 | Val: 219,669 | Test: 439,337
+22:13:55 [INFO] nara.reorder.rf — Training Random Forest...
+22:18:09 [INFO] nara.reorder.rf —   OOB Score: 0.6890
+22:18:14 [INFO] nara.training — [VAL] Accuracy=0.6889 | F1=0.7067 | Precision=0.7683 | Recall=0.6889 | AUC=0.7455
+22:18:14 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.45      0.76      0.56     58143
+           1       0.88      0.66      0.76    161526
+
+    accuracy                           0.69    219669
+   macro avg       0.67      0.71      0.66    219669
+weighted avg       0.77      0.69      0.71    219669
+
+22:18:25 [INFO] nara.training — [TEST] Accuracy=0.6882 | F1=0.7061 | Precision=0.7685 | Recall=0.6882 | AUC=0.7451
+22:18:25 [INFO] nara.training — 
+              precision    recall  f1-score   support
+
+           0       0.45      0.76      0.56    116286
+           1       0.88      0.66      0.76    323051
+
+    accuracy                           0.69    439337
+   macro avg       0.67      0.71      0.66    439337
+weighted avg       0.77      0.69      0.71    439337
+
+22:18:25 [INFO] nara.reorder.rf — 
+Top 15 features:
+               feature  importance
+     total_orders_dish    0.786203
+          days_between    0.114526
+     last_rating_proxy    0.034491
+                season    0.013393
+order_frequency_weekly    0.008085
+        habit_strength    0.007966
+        stress_profile    0.007840
+                   age    0.007299
+       health_literacy    0.006729
+            occupation    0.004673
+          trigger_type    0.002931
+           income_tier    0.002783
+        month_position    0.001977
+         is_vegetarian    0.001104
+22:18:27 [INFO] nara.training — Confusion matrix saved → ./models\plots\reorder_rf_cm.png
+22:18:28 [INFO] nara.training — Feature importance saved → ./models\plots\reorder_rf_fi.png
+22:18:28 [INFO] nara.training — Model saved → ./models\reorder_rf.joblib (131.2 MB)
+22:18:28 [INFO] nara.training — Metrics saved → ./models\reorder_rf_metrics.json
+22:18:28 [INFO] nara.reorder.rf — 
+============================================================
+22:18:28 [INFO] nara.reorder.rf — SUMMARY — Reorder Random Forest
+22:18:28 [INFO] nara.reorder.rf —   OOB Score     : 0.6890
+22:18:28 [INFO] nara.reorder.rf —   Test Accuracy : 0.6882
+22:18:28 [INFO] nara.reorder.rf —   Test F1       : 0.7061
+22:18:28 [INFO] nara.reorder.rf —   Test AUC      : 0.7451
+22:18:28 [INFO] nara.reorder.rf —   Model saved   : ./models\reorder_rf.joblib
+22:18:28 [INFO] nara.reorder.rf — ============================================================
+PS C:\Users\Darsh\OneDrive\Desktop\Nara\services\ml-training> 
