@@ -259,3 +259,30 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+  ml-inference-service:
+    build:
+      context: ./services/ml-inference
+      dockerfile: Dockerfile
+    container_name: nara-ml-inference
+    restart: unless-stopped
+    environment:
+      NEON_DATABASE_URL: "postgresql+asyncpg://neondb_owner:npg_VUpS27YXsGKQ@ep-orange-lake-aoafbm87.c-2.ap-southeast-1.aws.neon.tech/neondb?ssl=require"
+      LOCAL_DATABASE_URL: "postgresql+asyncpg://nara:nara_secret@postgres:5432/nara_data"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPACY_MODEL: en_core_web_sm
+      FUZZY_MATCH_THRESHOLD: "80"
+      ENVIRONMENT: development
+    ports:
+      - "8004:8004"
+    networks:
+      - nara-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
