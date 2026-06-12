@@ -20,6 +20,7 @@ from constants import (
     RELIGION_DIETARY_CONSTRAINTS, PERSONAS,
 )
 from constants import get_fasting_foods
+from constants import sample_family_history
 random.seed(42)
 np.random.seed(42)
 
@@ -516,10 +517,7 @@ def generate_user(user_id: int, persona_name: str = None) -> dict:
         "is_halal":                 religion == "muslim",
         "dietary_restrictions":     "|".join(dietary_restrictions),
         "conditions":               "|".join(conditions),
-        "family_history":           "|".join(random.sample(
-                                        ["diabetes", "hypertension", "heart_disease", "cancer", "none"],
-                                        k=random.randint(0, 2)
-                                    )),
+        "family_history": "|".join(sample_family_history(conditions)),
         "allergies":                "|".join(allergies),
         "bmi":                      bmi,
         "weight_kg":                weight_kg,
