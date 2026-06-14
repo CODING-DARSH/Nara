@@ -327,3 +327,31 @@ services:
       timeout: 5s
       retries: 5
 
+  conversation-service:
+    build:
+      context: ./services/conversation
+      dockerfile: Dockerfile
+    container_name: nara-conversation
+    restart: unless-stopped
+    environment:
+      NEON_DATABASE_URL: "postgresql+asyncpg://neondb_owner:npg_VUpS27YXsGKQ@ep-orange-lake-aoafbm87.c-2.ap-southeast-1.aws.neon.tech/neondb?ssl=require"
+      JWT_SECRET_KEY: super_secret_jwt_key_change_in_production
+      JWT_ALGORITHM: HS256
+      USER_INTELLIGENCE_URL: http://user-intelligence-service:8002
+      RECOMMENDATION_URL: http://recommendation-service:8005
+      ML_INFERENCE_URL: http://ml-inference-service:8004
+      INTENT_MODEL: typeform/distilbert-base-uncased-mnli
+      NER_MODEL: en_core_web_sm
+      RESPONSE_MODEL: template
+      ENVIRONMENT: development
+    ports:
+      - "8006:8006"
+    networks:
+      - nara-net
+    depends_on:
+      - recommendation-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
