@@ -12,8 +12,22 @@ export default function Register() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    // FIX: previously only checked length >= 8. Backend
+    // (services/auth/app/schemas/auth.py RegisterRequest.password_strength)
+    // also requires at least one uppercase letter and one digit — those
+    // requirements existed all along but were never enforced here, so a
+    // password like "testpass" passed this check and then got rejected
+    // by the backend with a confusing 422 the user never saw coming.
     if (password.length < 8) {
       setError("Password must be at least 8 characters");
+      return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      setError("Password must contain at least one uppercase letter");
+      return;
+    }
+    if (!/[0-9]/.test(password)) {
+      setError("Password must contain at least one number");
       return;
     }
     setLoading(true);
@@ -23,6 +37,7 @@ export default function Register() {
       const data = await auth.login(email, password);
       localStorage.setItem("nara_token", data.access_token);
       localStorage.setItem("nara_user_id", data.user_id);
+      localStorage.setItem("nara_email", email);
       navigate("/onboarding");
     } catch (err) {
       setError(err.message || "Registration failed");
@@ -62,7 +77,7 @@ export default function Register() {
         <input
           className="input-field"
           type="password"
-          placeholder="Password (min 8 characters)"
+          placeholder="Password (8+ chars, 1 uppercase, 1 number)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
