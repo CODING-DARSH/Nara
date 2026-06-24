@@ -1,6 +1,7 @@
-// NARA — Food Graph Page
+// NARA — Food Graph Page (FIXED: subscribes to graphVersion, no manual reload needed)
 import { useState, useEffect } from "react";
 import { user } from "../services/api";
+import { useFoodGraphVersion } from "../context/AppContext";
 
 function CircleProgress({ value, max, color, size = 80, strokeWidth = 6, label, sublabel }) {
   const r    = (size - strokeWidth * 2) / 2;
@@ -46,78 +47,45 @@ function Bar({ label, value, max, color }) {
         <span style={{ fontSize: "13px", fontWeight: 600 }}>{Math.round(value * 100)}%</span>
       </div>
       <div style={{ height: "4px", background: "var(--border)", borderRadius: "100px" }}>
-        <div
-          style={{
-            height:       "100%",
-            width:        `${pct}%`,
-            background:   color,
-            borderRadius: "100px",
-            transition:   "width 0.8s cubic-bezier(0.4,0,0.2,1)",
-          }}
-        />
+        <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: "100px", transition: "width 0.8s cubic-bezier(0.4,0,0.2,1)" }} />
       </div>
     </div>
   );
 }
 
 function GapCard({ gap }) {
-  const severityColor = {
-    low:    "var(--blue)",
-    medium: "var(--yellow)",
-    high:   "var(--red)",
-  }[gap.severity] || "var(--yellow)";
-
+  const severityColor = { low: "var(--blue)", medium: "var(--yellow)", high: "var(--red)" }[gap.severity] || "var(--yellow)";
   return (
-    <div
-      style={{
-        background:    "var(--surface)",
-        border:        `1px solid var(--border)`,
-        borderLeft:    `3px solid ${severityColor}`,
-        borderRadius:  "var(--radius)",
-        padding:       "14px 16px",
-      }}
-    >
+    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderLeft: `3px solid ${severityColor}`, borderRadius: "var(--radius)", padding: "14px 16px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-        <span style={{ fontSize: "14px", fontWeight: 600, textTransform: "capitalize" }}>
-          {gap.nutrient?.replace(/_/g, " ")}
-        </span>
-        <span className="badge" style={{
-          background: `${severityColor}18`,
-          color:      severityColor,
-          fontSize:   "9px",
-        }}>
-          {gap.severity}
-        </span>
+        <span style={{ fontSize: "14px", fontWeight: 600, textTransform: "capitalize" }}>{gap.nutrient?.replace(/_/g, " ")}</span>
+        <span className="badge" style={{ background: `${severityColor}18`, color: severityColor, fontSize: "9px" }}>{gap.severity}</span>
       </div>
-      {gap.hint && (
-        <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
-          {gap.hint}
-        </div>
-      )}
+      {gap.hint && <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>{gap.hint}</div>}
     </div>
   );
 }
 
 export default function FoodGraph() {
-  const [graph,     setGraph]     = useState(null);
-  const [loading,   setLoading]   = useState(true);
-  const [refreshing,setRefreshing]= useState(false);
-  const [period,    setPeriod]    = useState("24h");
+  const graphVersion = useFoodGraphVersion();
+  const [graph,   setGraph]   = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [period,  setPeriod]  = useState("24h");
 
-  function load(isRefresh) {
-    if (isRefresh) setRefreshing(true);
-    return user.getFoodGraph()
-      .then(setGraph)
-      .catch(() => setGraph(null))
-      .finally(() => {
-        setLoading(false);
-        setRefreshing(false);
-      });
-  }
+  // FIX 4: re-fetches whenever a meal is logged anywhere in the app
+  // (Home quick-log, LogMeal page, even from Chat) — graphVersion bumps
+  // once via notifyMealLogged(), every subscribed page updates quietly.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    user.getFoodGraph()
+      .then(g => { if (!cancelled) setGraph(g); })
+      .catch(() => { if (!cancelled) setGraph(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [graphVersion]);
 
-  useEffect(() => { load(false); }, []);
-
-  if (loading) {
+  if (loading && !graph) {
     return (
       <div className="page" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
         <span className="spinner" />
@@ -137,89 +105,44 @@ export default function FoodGraph() {
     );
   }
 
-  const data = period === "24h" ? graph.last_24h
-             : period === "7d"  ? graph.last_7d
-             : graph.last_30d;
+  const data = period === "24h" ? graph.last_24h : period === "7d" ? graph.last_7d : graph.last_30d;
 
   const cal   = data?.calories_kcal || 0;
   const prot  = data?.protein_g     || 0;
   const carbs = data?.carbs_g       || 0;
   const fat   = data?.fat_g         || 0;
-  const fiber = data?.fiber_g       || 0;
   const gi    = data?.glycemic_index || 0;
   const gl    = data?.glycemic_load  || 0;
 
   const cuisineAffinity = graph.cuisine_affinity || {};
-  const topCuisines     = Object.entries(cuisineAffinity)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5);
-
+  const topCuisines     = Object.entries(cuisineAffinity).sort(([, a], [, b]) => b - a).slice(0, 5);
   const gaps = graph.nutritional_gaps || [];
-
-  const CUISINE_COLORS = [
-    "var(--blue)", "var(--green)", "var(--purple)",
-    "var(--orange)", "var(--yellow)",
-  ];
+  const CUISINE_COLORS = ["var(--blue)", "var(--green)", "var(--purple)", "var(--orange)", "var(--yellow)"];
 
   return (
     <div className="page">
       <div style={{ padding: "56px 24px 0" }}>
-        {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px" }}>
           <div>
-            <h1 style={{ fontSize: "28px", fontWeight: "800", letterSpacing: "-0.03em" }}>
-              Food Graph
-            </h1>
+            <h1 style={{ fontSize: "28px", fontWeight: "800", letterSpacing: "-0.03em" }}>Food Graph</h1>
             <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginTop: "4px" }}>
               {graph.total_meals_logged} meals logged
             </div>
           </div>
-          {graph.last_computed_at && (
-            <button
-              onClick={() => load(true)}
-              disabled={refreshing}
-              style={{
-                display:    "flex",
-                alignItems: "center",
-                gap:        "6px",
-                fontSize:   "11px",
-                color:      "var(--text-tertiary)",
-                background: "none",
-              }}
-            >
-              <svg
-                width="12" height="12" viewBox="0 0 24 24" fill="none"
-                style={{
-                  animation: refreshing ? "spin 0.8s linear infinite" : "none",
-                  transformOrigin: "center",
-                }}
-              >
-                <path
-                  d="M21 12a9 9 0 1 1-2.64-6.36M21 4v6h-6"
-                  stroke="currentColor" strokeWidth="2"
-                  strokeLinecap="round" strokeLinejoin="round"
-                />
-              </svg>
-              {refreshing ? "Refreshing..." : `Updated ${formatRelative(graph.last_computed_at)}`}
-            </button>
-          )}
+          {loading && <span className="spinner" style={{ width: "16px", height: "16px" }} />}
         </div>
 
-        {/* Period selector */}
         <div style={{ display: "flex", gap: "8px", marginBottom: "28px" }}>
           {["24h", "7d", "30d"].map(p => (
             <button
               key={p}
               onClick={() => setPeriod(p)}
               style={{
-                padding:      "7px 18px",
-                borderRadius: "100px",
-                background:   period === p ? "var(--text-primary)" : "var(--surface)",
-                color:        period === p ? "var(--bg)" : "var(--text-secondary)",
-                border:       `1px solid ${period === p ? "var(--text-primary)" : "var(--border)"}`,
-                fontSize:     "13px",
-                fontWeight:   period === p ? 600 : 400,
-                transition:   "all 0.2s",
+                padding: "7px 18px", borderRadius: "100px",
+                background: period === p ? "var(--text-primary)" : "var(--surface)",
+                color: period === p ? "var(--bg)" : "var(--text-secondary)",
+                border: `1px solid ${period === p ? "var(--text-primary)" : "var(--border)"}`,
+                fontSize: "13px", fontWeight: period === p ? 600 : 400, transition: "all 0.2s",
               }}
             >
               {p}
@@ -227,20 +150,18 @@ export default function FoodGraph() {
           ))}
         </div>
 
-        {/* Macros ring row */}
         <div className="card" style={{ marginBottom: "20px" }}>
           <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: "20px" }}>
             Macronutrients
           </div>
           <div style={{ display: "flex", justifyContent: "space-around" }}>
-            <CircleProgress value={cal}   max={2000} color="var(--blue)"   size={80} label="Calories"  sublabel="kcal" />
-            <CircleProgress value={prot}  max={60}   color="var(--green)"  size={80} label="Protein"   sublabel="g" />
-            <CircleProgress value={carbs} max={250}  color="var(--yellow)" size={80} label="Carbs"     sublabel="g" />
-            <CircleProgress value={fat}   max={65}   color="var(--orange)" size={80} label="Fat"       sublabel="g" />
+            <CircleProgress value={cal}   max={2000} color="var(--blue)"   size={80} label="Calories" sublabel="kcal" />
+            <CircleProgress value={prot}  max={60}   color="var(--green)"  size={80} label="Protein"  sublabel="g" />
+            <CircleProgress value={carbs} max={250}  color="var(--yellow)" size={80} label="Carbs"    sublabel="g" />
+            <CircleProgress value={fat}   max={65}   color="var(--orange)" size={80} label="Fat"      sublabel="g" />
           </div>
         </div>
 
-        {/* GI/GL */}
         {(gi > 0 || gl > 0) && (
           <div className="card" style={{ marginBottom: "20px" }}>
             <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: "16px" }}>
@@ -250,9 +171,7 @@ export default function FoodGraph() {
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
                   <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Glycemic Index</span>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: gi > 70 ? "var(--red)" : gi > 55 ? "var(--yellow)" : "var(--green)" }}>
-                    {Math.round(gi)}
-                  </span>
+                  <span style={{ fontSize: "14px", fontWeight: 700, color: gi > 70 ? "var(--red)" : gi > 55 ? "var(--yellow)" : "var(--green)" }}>{Math.round(gi)}</span>
                 </div>
                 <div style={{ height: "4px", background: "var(--border)", borderRadius: "100px" }}>
                   <div style={{ height: "100%", width: `${Math.min(100, gi)}%`, background: gi > 70 ? "var(--red)" : gi > 55 ? "var(--yellow)" : "var(--green)", borderRadius: "100px", transition: "width 0.8s" }} />
@@ -261,9 +180,7 @@ export default function FoodGraph() {
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
                   <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Glycemic Load</span>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: gl > 20 ? "var(--red)" : gl > 11 ? "var(--yellow)" : "var(--green)" }}>
-                    {Math.round(gl)}
-                  </span>
+                  <span style={{ fontSize: "14px", fontWeight: 700, color: gl > 20 ? "var(--red)" : gl > 11 ? "var(--yellow)" : "var(--green)" }}>{Math.round(gl)}</span>
                 </div>
                 <div style={{ height: "4px", background: "var(--border)", borderRadius: "100px" }}>
                   <div style={{ height: "100%", width: `${Math.min(100, gl * 3)}%`, background: gl > 20 ? "var(--red)" : gl > 11 ? "var(--yellow)" : "var(--green)", borderRadius: "100px", transition: "width 0.8s" }} />
@@ -273,7 +190,6 @@ export default function FoodGraph() {
           </div>
         )}
 
-        {/* Cuisine affinity */}
         {topCuisines.length > 0 && (
           <div className="card" style={{ marginBottom: "20px" }}>
             <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: "16px" }}>
@@ -281,19 +197,12 @@ export default function FoodGraph() {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               {topCuisines.map(([cuisine, score], i) => (
-                <Bar
-                  key={cuisine}
-                  label={cuisine}
-                  value={score}
-                  max={1}
-                  color={CUISINE_COLORS[i % CUISINE_COLORS.length]}
-                />
+                <Bar key={cuisine} label={cuisine} value={score} max={1} color={CUISINE_COLORS[i % CUISINE_COLORS.length]} />
               ))}
             </div>
           </div>
         )}
 
-        {/* Top dishes */}
         {graph.top_dishes?.length > 0 && (
           <div className="card" style={{ marginBottom: "20px" }}>
             <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: "16px" }}>
@@ -303,39 +212,16 @@ export default function FoodGraph() {
               {graph.top_dishes.slice(0, 6).map((d, i) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <div
-                      style={{
-                        width: "32px", height: "32px",
-                        borderRadius: "8px",
-                        background: "var(--surface-2)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: "16px",
-                      }}
-                    >
-                      🍽
-                    </div>
-                    <span style={{ fontSize: "14px", textTransform: "capitalize" }}>
-                      {d.dish?.replace(/_/g, " ")}
-                    </span>
+                    <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "var(--surface-2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>🍽</div>
+                    <span style={{ fontSize: "14px", textTransform: "capitalize" }}>{d.dish?.replace(/_/g, " ")}</span>
                   </div>
-                  <span
-                    style={{
-                      fontSize: "12px",
-                      color: "var(--text-secondary)",
-                      background: "var(--surface-2)",
-                      padding: "3px 10px",
-                      borderRadius: "100px",
-                    }}
-                  >
-                    {d.count}×
-                  </span>
+                  <span style={{ fontSize: "12px", color: "var(--text-secondary)", background: "var(--surface-2)", padding: "3px 10px", borderRadius: "100px" }}>{d.count}×</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Nutritional gaps */}
         {gaps.length > 0 && (
           <div style={{ marginBottom: "20px" }}>
             <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: "12px" }}>
@@ -349,13 +235,4 @@ export default function FoodGraph() {
       </div>
     </div>
   );
-}
-
-function formatRelative(ts) {
-  const d    = new Date(ts);
-  const diff = (Date.now() - d.getTime()) / 1000;
-  if (diff < 60)   return "just now";
-  if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
-  if (diff < 86400)return `${Math.round(diff / 3600)}h ago`;
-  return `${Math.round(diff / 86400)}d ago`;
 }
