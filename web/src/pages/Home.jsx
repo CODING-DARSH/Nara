@@ -1,13 +1,14 @@
-// NARA — Home Page
+// NARA — Home Page (FIXED: uses notifyMealLogged instead of raw refetch)
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { user, meals, recommendations } from "../services/api";
+import { useAppContext, useFoodGraphVersion } from "../context/AppContext";
 
-function MacroRing({ value, max, color, label, unit }) {
-  const pct = Math.min(100, (value / max) * 100);
-  const r   = 28;
-  const circ= 2 * Math.PI * r;
-  const dash= (pct / 100) * circ;
+function MacroRing({ value, max, color, label }) {
+  const pct  = Math.min(100, (value / max) * 100);
+  const r    = 28;
+  const circ = 2 * Math.PI * r;
+  const dash = (pct / 100) * circ;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
@@ -30,10 +31,11 @@ function MacroRing({ value, max, color, label, unit }) {
   );
 }
 
-function QuickLogChip({ label, onClick }) {
+function QuickLogChip({ label, onClick, disabled }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       style={{
         padding:      "8px 16px",
         borderRadius: "100px",
@@ -43,10 +45,8 @@ function QuickLogChip({ label, onClick }) {
         fontSize:     "13px",
         fontWeight:   500,
         whiteSpace:   "nowrap",
-        transition:   "all 0.2s",
+        opacity:      disabled ? 0.5 : 1,
       }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = "var(--text-secondary)"}
-      onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
     >
       {label}
     </button>
@@ -55,6 +55,9 @@ function QuickLogChip({ label, onClick }) {
 
 export default function Home() {
   const navigate = useNavigate();
+  const { notifyMealLogged } = useAppContext();
+  const graphVersion = useFoodGraphVersion();
+
   const [graph,   setGraph]   = useState(null);
   const [recs,    setRecs]    = useState([]);
   const [loading, setLoading] = useState(true);
@@ -65,21 +68,26 @@ export default function Home() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
+  // FIX 4: re-fetch silently whenever graphVersion bumps (after a meal
+  // log anywhere in the app), no full page reload, just data swap.
   useEffect(() => {
+    let cancelled = false;
     async function load() {
       try {
         const [g, r] = await Promise.allSettled([
           user.getFoodGraph(),
           recommendations.get(null, null, null, 5),
         ]);
+        if (cancelled) return;
         if (g.status === "fulfilled") setGraph(g.value);
         if (r.status === "fulfilled") setRecs(r.value?.recommendations || []);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     load();
-  }, []);
+    return () => { cancelled = true; };
+  }, [graphVersion]);
 
   async function quickLog(text) {
     setLogging(true);
@@ -87,8 +95,10 @@ export default function Home() {
       await meals.logText(text);
       setLogSuccess(true);
       setTimeout(() => setLogSuccess(false), 2500);
-      const g = await user.getFoodGraph();
-      setGraph(g);
+      // FIX 3: triggers safety-net recompute + bumps graphVersion,
+      // which re-runs the effect above for THIS page too — consistent
+      // with how LogMeal/FoodGraph/Recommendations all stay in sync.
+      await notifyMealLogged();
     } catch {}
     finally { setLogging(false); }
   }
@@ -96,8 +106,9 @@ export default function Home() {
   async function handleLogSubmit(e) {
     e.preventDefault();
     if (!logInput.trim()) return;
-    await quickLog(logInput);
+    const text = logInput;
     setLogInput("");
+    await quickLog(text);
   }
 
   const last24 = graph?.last_24h || {};
@@ -109,7 +120,6 @@ export default function Home() {
 
   return (
     <div className="page" style={{ padding: "0 0 var(--nav-height)" }}>
-      {/* Header */}
       <div style={{ padding: "56px 24px 24px" }}>
         <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "4px" }}>
           {greeting}
@@ -119,19 +129,18 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Quick log bar */}
       <div style={{ padding: "0 24px", marginBottom: "28px" }}>
         <form onSubmit={handleLogSubmit}>
           <div
             style={{
-              display:       "flex",
-              alignItems:    "center",
-              gap:           "10px",
-              background:    "var(--surface)",
-              border:        `1px solid ${logSuccess ? "var(--green)" : "var(--border)"}`,
-              borderRadius:  "var(--radius-xl)",
-              padding:       "12px 16px",
-              transition:    "border-color 0.3s",
+              display:      "flex",
+              alignItems:   "center",
+              gap:          "10px",
+              background:   "var(--surface)",
+              border:       `1px solid ${logSuccess ? "var(--green)" : "var(--border)"}`,
+              borderRadius: "var(--radius-xl)",
+              padding:      "12px 16px",
+              transition:   "border-color 0.3s",
             }}
           >
             <span style={{ fontSize: "18px" }}>🍽</span>
@@ -140,6 +149,7 @@ export default function Home() {
               placeholder="Had idli and sambar..."
               value={logInput}
               onChange={e => setLogInput(e.target.value)}
+              disabled={logging}
             />
             {logging ? (
               <span className="spinner" />
@@ -149,9 +159,9 @@ export default function Home() {
               <button
                 type="submit"
                 style={{
-                  background: "var(--text-primary)", color: "var(--bg)",
+                  background:   "var(--text-primary)", color: "var(--bg)",
                   borderRadius: "100px", padding: "6px 14px",
-                  fontSize: "13px", fontWeight: 600,
+                  fontSize:     "13px", fontWeight: 600,
                 }}
               >
                 Log
@@ -160,15 +170,13 @@ export default function Home() {
           </div>
         </form>
 
-        {/* Quick chips */}
         <div style={{ display: "flex", gap: "8px", marginTop: "12px", overflowX: "auto", paddingBottom: "4px" }}>
           {["Had chai ☕", "Ate biryani 🍛", "Had idli 🥘", "Ate salad 🥗", "Had roti sabzi 🫓"].map(chip => (
-            <QuickLogChip key={chip} label={chip} onClick={() => quickLog(chip)} />
+            <QuickLogChip key={chip} label={chip} onClick={() => quickLog(chip)} disabled={logging} />
           ))}
         </div>
       </div>
 
-      {/* Today's nutrition */}
       {!loading && (
         <div style={{ padding: "0 24px", marginBottom: "32px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
@@ -179,10 +187,10 @@ export default function Home() {
           </div>
 
           <div className="card" style={{ display: "flex", justifyContent: "space-around", padding: "24px 16px" }}>
-            <MacroRing value={cal}  max={2000} color="var(--blue)"   label="Calories" unit="kcal" />
-            <MacroRing value={prot} max={60}   color="var(--green)"  label="Protein"  unit="g" />
-            <MacroRing value={carbs}max={250}  color="var(--yellow)" label="Carbs"    unit="g" />
-            <MacroRing value={fat}  max={65}   color="var(--orange)" label="Fat"      unit="g" />
+            <MacroRing value={cal}  max={2000} color="var(--blue)"   label="Calories" />
+            <MacroRing value={prot} max={60}   color="var(--green)"  label="Protein" />
+            <MacroRing value={carbs}max={250}  color="var(--yellow)" label="Carbs" />
+            <MacroRing value={fat}  max={65}   color="var(--orange)" label="Fat" />
           </div>
 
           {cal === 0 && (
@@ -193,58 +201,28 @@ export default function Home() {
         </div>
       )}
 
-      {/* Recommendations */}
       {recs.length > 0 && (
         <div style={{ marginBottom: "32px" }}>
           <div style={{ padding: "0 24px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <span className="section-title" style={{ fontSize: "18px" }}>For you right now</span>
-            <button
-              onClick={() => navigate("/recommendations")}
-              style={{ fontSize: "13px", color: "var(--text-secondary)", fontWeight: 500 }}
-            >
+            <button onClick={() => navigate("/recommendations")} style={{ fontSize: "13px", color: "var(--text-secondary)", fontWeight: 500 }}>
               See all
             </button>
           </div>
 
           <div style={{ display: "flex", gap: "12px", overflowX: "auto", padding: "0 24px", paddingBottom: "4px" }}>
             {recs.map((rec, i) => (
-              <div
-                key={i}
-                className="card"
-                style={{
-                  minWidth:   "160px",
-                  padding:    "16px",
-                  cursor:     "pointer",
-                  flexShrink: 0,
-                  animation:  `fadeUp 0.3s ease ${i * 0.05}s both`,
-                }}
-              >
-                <div
-                  style={{
-                    width:        "100%",
-                    height:       "80px",
-                    background:   "var(--surface-2)",
-                    borderRadius: "var(--radius-sm)",
-                    marginBottom: "12px",
-                    display:      "flex",
-                    alignItems:   "center",
-                    justifyContent:"center",
-                    fontSize:     "32px",
-                  }}
-                >
+              <div key={i} className="card" style={{ minWidth: "160px", padding: "16px", cursor: "pointer", flexShrink: 0, animation: `fadeUp 0.3s ease ${i * 0.05}s both` }}>
+                <div style={{ width: "100%", height: "80px", background: "var(--surface-2)", borderRadius: "var(--radius-sm)", marginBottom: "12px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "32px" }}>
                   {getCuisineEmoji(rec.cuisine_type)}
                 </div>
-                <div style={{ fontSize: "13px", fontWeight: 600, marginBottom: "4px" }}>
+                <div style={{ fontSize: "13px", fontWeight: 600, marginBottom: "4px", textTransform: "capitalize" }}>
                   {rec.dish_name?.replace(/_/g, " ")}
                 </div>
                 <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                  {rec.health_compliant && (
-                    <span className="badge badge-green" style={{ fontSize: "9px" }}>✓ healthy</span>
-                  )}
+                  {rec.health_compliant && <span className="badge badge-green" style={{ fontSize: "9px" }}>✓ healthy</span>}
                   {rec.nutrition?.calories && (
-                    <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                      {Math.round(rec.nutrition.calories)} kcal
-                    </span>
+                    <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>{Math.round(rec.nutrition.calories)} kcal</span>
                   )}
                 </div>
               </div>
@@ -253,37 +231,17 @@ export default function Home() {
         </div>
       )}
 
-      {/* Top dishes */}
       {graph?.top_dishes?.length > 0 && (
         <div style={{ padding: "0 24px" }}>
-          <div className="section-title" style={{ fontSize: "18px", marginBottom: "16px" }}>
-            Your favourites
-          </div>
+          <div className="section-title" style={{ fontSize: "18px", marginBottom: "16px" }}>Your favourites</div>
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             {graph.top_dishes.slice(0, 5).map((d, i) => (
-              <div
-                key={i}
-                style={{
-                  display:       "flex",
-                  alignItems:    "center",
-                  justifyContent:"space-between",
-                  padding:       "14px 16px",
-                  background:    "var(--surface)",
-                  borderRadius:  "var(--radius)",
-                  border:        "1px solid var(--border)",
-                }}
-              >
+              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface)", borderRadius: "var(--radius)", border: "1px solid var(--border)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <span style={{ fontSize: "20px", width: "28px" }}>
-                    {getCuisineEmoji(d.cuisine_type || d.cuisine)}
-                  </span>
-                  <span style={{ fontSize: "14px", fontWeight: 500, textTransform: "capitalize" }}>
-                    {d.dish?.replace(/_/g, " ")}
-                  </span>
+                  <span style={{ fontSize: "20px", width: "28px" }}>{getCuisineEmoji()}</span>
+                  <span style={{ fontSize: "14px", fontWeight: 500, textTransform: "capitalize" }}>{d.dish?.replace(/_/g, " ")}</span>
                 </div>
-                <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-                  {d.count}×
-                </span>
+                <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{d.count}×</span>
               </div>
             ))}
           </div>
