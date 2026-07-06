@@ -32,7 +32,17 @@ async def get_food_graph(
     cached = await redis.get(cache_key)
     if cached:
         data = json.loads(cached)
-        return FoodGraphResponse(**data)
+        try:
+            return FoodGraphResponse(**data)
+        except Exception:
+            # Cached entry predates a schema change (e.g. total_meals_pending
+            # added after this was cached) and is missing a now-required
+            # field. Don't crash the request over a stale cache — drop it
+            # and fall through to a fresh DB read/recompute below. This is
+            # exactly the failure mode that hit total_meals_pending here;
+            # this guard means future schema additions degrade gracefully
+            # instead of 500ing every cached user until TTL expiry.
+            await redis.delete(cache_key)
 
     # Cache miss — fetch or compute
     result = await db.execute(
@@ -56,6 +66,7 @@ async def get_food_graph(
                 top_dishes=[],
                 detected_patterns={},
                 total_meals_logged=0,
+                total_meals_pending=0,
                 last_computed_at=None,
             )
 
@@ -70,6 +81,7 @@ async def get_food_graph(
         top_dishes=graph.top_dishes,
         detected_patterns=graph.detected_patterns,
         total_meals_logged=graph.total_meals_logged,
+        total_meals_pending=graph.total_meals_pending,
         last_computed_at=graph.last_computed_at,
     )
 
@@ -214,6 +226,7 @@ async def recompute_food_graph(
         top_dishes=graph.top_dishes,
         detected_patterns=graph.detected_patterns,
         total_meals_logged=graph.total_meals_logged,
+        total_meals_pending=graph.total_meals_pending,
         last_computed_at=graph.last_computed_at,
     )
 
