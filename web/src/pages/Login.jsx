@@ -18,6 +18,7 @@ export default function Login() {
       const data = await auth.login(email, password);
       localStorage.setItem("nara_token", data.access_token);
       localStorage.setItem("nara_user_id", data.user_id);
+      localStorage.setItem("nara_email", email);
       navigate("/");
     } catch (err) {
       setError(err.message || "Login failed");
