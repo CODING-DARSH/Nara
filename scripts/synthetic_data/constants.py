@@ -409,7 +409,49 @@ REGIONAL_CUISINE_AFFINITY = {
         "dessert":      (0.5, 0.4),
     },
 }
-
+# ADD these new keys — generators need to check state first, then fall back to region
+REGIONAL_CUISINE_AFFINITY_BY_STATE = {
+    "Assam": {
+        "assamese":     (5.0, 0.8),   # rice, fish, mustard-based
+        "northeast":    (3.0, 0.7),
+        "north_indian": (0.5, 0.3),
+        "bengali":      (0.3, 0.2),   # some overlap but not dominant
+    },
+    "Odisha": {
+        "odia":         (5.5, 0.8),   # dal pakhala, dalma, chhena poda
+        "east_indian":  (2.0, 0.6),
+        "north_indian": (0.8, 0.4),
+        "bengali":      (0.4, 0.2),   # some overlap, neighboring state
+    },
+    "Tripura": {
+        "bengali":      (3.0, 0.7),   # genuine overlap, large Bengali population
+        "northeast":    (2.5, 0.7),
+        "north_indian": (0.5, 0.3),
+    },
+    "Meghalaya": {
+        "northeast":    (5.0, 0.8),
+        "north_indian": (0.5, 0.3),
+        "bengali":      (0.2, 0.1),
+    },
+    "Manipur": {
+        "northeast":    (5.5, 0.8),
+        "north_indian": (0.4, 0.3),
+        "bengali":      (0.2, 0.1),
+    },
+    "Nagaland": {
+        "northeast":    (5.5, 0.8),
+        "north_indian": (0.3, 0.2),
+    },
+    "Arunachal Pradesh": {
+        "northeast":    (5.5, 0.8),
+        "north_indian": (0.4, 0.3),
+    },
+    "Sikkim": {
+        "northeast":    (4.0, 0.8),
+        "north_indian": (1.0, 0.5),
+        "bengali":      (0.5, 0.3),
+    },
+}
 # ── Dish pools by cuisine ─────────────────────────────────────
 # These are the dishes in our nutrition KB mapped by cuisine
 CUISINE_DISH_POOLS = {
@@ -478,7 +520,14 @@ CUISINE_DISH_POOLS = {
         "mango pickle", "papadum",
     ],
     "goan": ["goan fish curry", "vindaloo", "bebinca"],
-    "odia": ["dal pakhala", "dalma"],
+    "odia": [
+    "dal pakhala", "dalma", "chhena poda", "santula",
+    "mahura", "pakhala bhata", "saga bhaja",
+    ],
+    "assamese": [
+        "masor tenga", "duck curry", "aloo pitika", "khar",
+        "paro mangkho", "bamboo shoot curry",
+    ],
 }
 
 # ── Meal timing distributions ─────────────────────────────────
@@ -1162,8 +1211,8 @@ def compute_bmi_change(avg_calories_per_meal: float,
     bmi_change = weight_change_kg / (height_m ** 2)
 
     # Add realistic noise and clamp
-    noise = np.random.normal(0, 0.3)
-    return round(max(-2.0, min(2.0, bmi_change + noise)), 2)
+    noise = np.random.normal(0, 0.6)
+    return round(max(-3.0, min(3.0, bmi_change + noise)), 2)
 
 
 # ─────────────────────────────────────────────────────────────

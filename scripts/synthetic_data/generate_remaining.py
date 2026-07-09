@@ -22,6 +22,7 @@ from constants import (
     MONTH_TO_SEASON, FESTIVALS, LIFE_EVENT_TYPES,
     FASTING_SCHEDULES, DISH_GI_SCORES, DEFAULT_GI,
     get_month_position_multiplier,
+    compute_compliance_improvement,
 )
 from constants import get_fasting_foods
 random.seed(42)
@@ -156,7 +157,7 @@ def simulate_interaction(user: dict, dish: str, rank: int,
                           context_budget: float) -> dict:
     """Simulate realistic click/order behaviour"""
     is_vegetarian = user.get("is_vegetarian", False)
-    conditions = str(user.get("conditions", "")).split("|")
+    conditions = [c.strip() for c in str(user.get("conditions", "")).split("|") if c.strip()]
     health_literacy = float(user.get("health_literacy", 0.5))
     income_tier = user.get("income_tier", "medium")
 
@@ -199,10 +200,8 @@ def simulate_interaction(user: dict, dish: str, rank: int,
         if dish in ["chicken biryani", "mutton biryani", "dal baati churma"]:
             click_prob *= 1.3
 
+    
     clicked = random.random() < click_prob
-    session_duration = random.randint(5, 180) if clicked else random.randint(1, 15)
-
-    # Order probability given click
     order_prob = 0.0
     if clicked:
         order_prob = 0.35 - rank * 0.03
@@ -212,6 +211,15 @@ def simulate_interaction(user: dict, dish: str, rank: int,
             order_prob *= 1.2
 
     ordered = clicked and random.random() < order_prob
+    if ordered:
+        session_duration = random.randint(90, 300)   # ordered → long session
+    elif clicked:
+        session_duration = random.randint(20, 120)   # clicked → medium
+    else:
+        session_duration = random.randint(1, 15)   
+
+    # Order probability given click
+
 
     return {
         "action":           "order" if ordered else ("click" if clicked else "skip"),
@@ -658,7 +666,7 @@ def generate_health_outcomes_csv(users_csv: str = "data/users.csv",
         user_meals = meals_df[meals_df["user_id"] == uid]
         if len(user_meals) == 0:
             continue
-
+        prev_compliance_by_user = {}
         for (year, quarter), q_meals in user_meals.groupby(["year", "quarter"]):
             avg_cal = q_meals["estimated_calories"].mean() if "estimated_calories" in q_meals.columns else 300
             avg_gi = q_meals["gi_score"].mean() if "gi_score" in q_meals.columns else 55
@@ -666,13 +674,25 @@ def generate_health_outcomes_csv(users_csv: str = "data/users.csv",
             avg_fiber = q_meals["estimated_fiber_g"].mean() if "estimated_fiber_g" in q_meals.columns else 5
             avg_sodium = random.uniform(800, 2200)
             compliance = q_meals["health_compliant"].mean() if "health_compliant" in q_meals.columns else 0.6
+            uid = user["user_id"]
+            prev = prev_compliance_by_user.get(uid, None)
+            compliance_improvement = compute_compliance_improvement(float(compliance), prev)
+            prev_compliance_by_user[uid] = float(compliance)
 
             # BMI change based on caloric intake
-            caloric_surplus = avg_cal * 3 - 2000  # rough daily surplus
-            bmi_change = round(caloric_surplus / 7700 * 90, 2)  # 90 days per quarter
-            bmi_change = max(-2.0, min(2.0, bmi_change + np.random.normal(0, 0.3)))
-            bmi = round(bmi + bmi_change, 1)
-
+            from constants import compute_bmi_change
+            n_meals = len(q_meals)
+            quarter_days = 90
+            meals_per_day = n_meals / quarter_days
+            bmi_change = compute_bmi_change(
+            avg_calories_per_meal=float(avg_cal),
+            meals_per_day=meals_per_day,
+            height_cm=float(user.get("height_cm", 165)),
+            fitness_goal=str(user.get("fitness_goal", "maintain")),
+            activity_level=str(user.get("activity_level", "lightly_active")),
+            quarter_days=quarter_days,
+            )
+            bmi = round(max(14.0, min(50.0, bmi + bmi_change)), 1)
             # Condition severity change
             severity_change = 0.0
             if "type2_diabetes" in conditions:
@@ -709,7 +729,7 @@ def generate_health_outcomes_csv(users_csv: str = "data/users.csv",
                 "nutritional_gap_score":    gap_score,
                 "health_trend":             health_trend,
                 "compliance_rate":          round(float(compliance), 3),
-                "compliance_improvement":   round(float(compliance - 0.5), 3),
+                "compliance_improvement": compliance_improvement,
             })
             outcome_id += 1
 
@@ -723,8 +743,11 @@ def generate_health_outcomes_csv(users_csv: str = "data/users.csv",
 # 8. SOCIAL EATING CONTEXT
 # ════════════════════════════════════════════════════════════
 
-def generate_social_context_csv(meal_logs_csv: str = "data/meal_logs.csv",
-                                  output_path: str = "data/social_eating_context.csv"):
+def generate_social_context_csv(meal_logs_csv="data/meal_logs.csv",
+                                  users_csv="data/users.csv",
+                                  output_path="data/social_eating_context.csv"):
+    users_df = pd.read_csv(users_csv, usecols=["user_id","living_situation"])
+    living_map = dict(zip(users_df["user_id"], users_df["living_situation"]))
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     print("Generating social_eating_context.csv...")
 
@@ -768,6 +791,17 @@ def generate_social_context_csv(meal_logs_csv: str = "data/meal_logs.csv",
     chunk_size = 100000
     for i, (_, meal) in enumerate(meals_df.iterrows()):
         social = meal.get("social_context", "alone")
+        uid = meal.get("user_id", "")
+        living = living_map.get(uid, "with_family")
+        if social == "alone":
+            if living in ["hostel_pg"]:
+                loc_options = ["hostel", "home", "office_desk"]
+            elif living in ["with_roommates"]:
+                loc_options = ["home", "office_desk", "nearby_restaurant"]
+            else:
+                loc_options = ["home", "office_desk"]
+        else:
+            loc_options = location_types.get(social, ["home"])
         group_size = group_sizes.get(social, 1)
         if callable(group_size):
             group_size = group_size()
