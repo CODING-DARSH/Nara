@@ -20,7 +20,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("recommendation_service.starting")
-    model_store.load_all(settings.models_dir, settings)
+    model_store.load_all(settings.models_dir)
     log.info("recommendation_service.ready", models=model_store.status())
     yield
     log.info("recommendation_service.stopping")

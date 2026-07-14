@@ -305,105 +305,89 @@ def filter_by_dietary(dishes: list, restrictions: list, is_veg: bool) -> list:
 # Scoring — ranker, health, occasion detection, reorder boost
 # ════════════════════════════════════════════════════════════
 
-def score_dish(user: dict, dish: dict, context: dict, rank: int) -> float:
-    """Score a single dish for a user using the trained ranker model."""
+def score_dish(user: dict, dish: dict, context: dict, rank: int) -> tuple[float, dict]:
+    """
+    Ensemble ranker score for a single dish.
+    Returns (combined_score, per_model_breakdown) — breakdown is logged
+    per-request so weights can be tuned from real production data.
+    Falls back to rule-based if no ranker variants loaded.
+    """
     features = build_feature_vector(user, dish, context, rank)
 
-    if model_store.ranker is not None and model_store.ranker_type != "rules":
-        try:
-            if model_store.ranker_type == "lgbm":
-                probs = model_store.ranker.predict(features.reshape(1, -1))
-                score = float(probs[0][2]) if probs.ndim == 2 else float(probs[0])
-            else:
-                probs = model_store.ranker.predict_proba(features.reshape(1, -1))
-                score = float(probs[0][2]) if probs.shape[1] > 2 else float(probs[0][1])
-            return round(score, 4)
-        except Exception as e:
-            log.warning(f"Ranker inference failed ({model_store.ranker_type}): {e}, using rules")
+    if model_store.rankers:
+        score, breakdown = model_store.ensemble_ranker_score(features)
+        if score > 0 or breakdown:
+            return score, breakdown
 
-    conditions = user.get("conditions", [])
+    # Rule-based fallback
+    conditions    = user.get("conditions", [])
     if isinstance(conditions, str):
         conditions = conditions.split("|") if conditions else []
-
     health_score  = rule_health_score(dish, conditions)
     cuisine_score = user.get("cuisine_affinity_score", 0.5)
     recency_bonus = 0.1 if dish.get("dish_name") in user.get("top_dishes", []) else 0.0
-
-    return round((health_score * 0.4 + cuisine_score * 0.4 + recency_bonus + 0.1), 4)
+    score = round((health_score * 0.4 + cuisine_score * 0.4 + recency_bonus + 0.1), 4)
+    return score, {"rules": score}
 
 
 def health_score_dish(user: dict, dish: dict, context: dict | None = None) -> dict:
     """
-    Score a dish for health compliance using the trained health scorer.
-
-    FIX: of the 23 trained features, 8 were previously hardcoded to 0/1
-    regardless of the real user/context:
-      - meal_occasion, season, activity_level: now computed from real
-        context/profile data instead of 0.
-      - is_vegetarian: was zeroed even though user["is_vegetarian"] was
-        already correct and in scope two lines below (it's used for the
-        condition flags) — this was just a copy that never happened.
-      - is_festival_day, is_fast_day: still 0 — this is the honest state,
-        not a bug. No festival/fast-day calendar exists anywhere in this
-        codebase to compute it from. Needs a real calendar/lookup table
-        before this can be anything but 0; flagged here rather than
-        silently faking a value.
+    Ensemble health compliance score for a dish.
+    Combines xgb + rf variants weighted by AUC.
+    Falls back to rule-based if no models loaded.
     """
     context = context or {}
     conditions = user.get("conditions", [])
     if isinstance(conditions, str):
         conditions = conditions.split("|") if conditions else []
 
-    if model_store.health_scorer is not None and model_store.health_type != "rules":
-        try:
-            gi       = dish.get("glycemic_index", 55) or 55
-            calories = dish.get("calories_kcal", 300) or 300
+    gi       = dish.get("glycemic_index", 55) or 55
+    calories = dish.get("calories_kcal", 300) or 300
 
-            meal_occasion = context.get("occasion") or "lunch"
-            season        = context.get("season", "summer")
-            activity      = user.get("activity_level", "moderately_active")
-            is_veg        = 1.0 if user.get("is_vegetarian") else 0.0
+    meal_occasion = context.get("occasion") or "lunch"
+    season        = context.get("season", "summer")
+    activity      = user.get("activity_level", "moderately_active")
+    is_veg        = 1.0 if user.get("is_vegetarian") else 0.0
 
-            features = np.array([[
-                float(gi), float(calories),
-                float(dish.get("protein_g", 10) or 10),
-                float(dish.get("carbs_g", 35) or 35),
-                float(dish.get("fat_g", 8) or 8),
-                float(dish.get("fiber_g", 3) or 3),
-                1.0,
-                float(user.get("age", 30)),
-                float(user.get("bmi", 23.0)),
-                float(user.get("health_literacy", 0.5)),
-                _label_encode(meal_occasion, _OCCASION_CLASSES),
-                _label_encode(season, _SEASON_CLASSES),
-                # stress_level + activity_level categoricals
-                _label_encode(context.get("stress_level", "medium"), _STRESS_CLASSES),
-                _label_encode(activity, _ACTIVITY_CLASSES),
-                0,  # is_festival_day — no calendar source exists yet, see docstring
-                0,  # is_fast_day — same
-                is_veg,
-                int("type2_diabetes" in conditions),
-                int("prediabetes" in conditions),
-                int("hypertension" in conditions),
-                int("obesity" in conditions),
-                int("pcos" in conditions),
-                int("high_cholesterol" in conditions),
-            ]], dtype=np.float32)
+    features = np.array([[
+        float(gi), float(calories),
+        float(dish.get("protein_g", 10) or 10),
+        float(dish.get("carbs_g", 35) or 35),
+        float(dish.get("fat_g", 8) or 8),
+        float(dish.get("fiber_g", 3) or 3),
+        1.0,
+        float(user.get("age", 30)),
+        float(user.get("bmi", 23.0)),
+        float(user.get("health_literacy", 0.5)),
+        _label_encode(meal_occasion, _OCCASION_CLASSES),
+        _label_encode(season, _SEASON_CLASSES),
+        _label_encode(context.get("stress_level", "medium"), _STRESS_CLASSES),
+        _label_encode(activity, _ACTIVITY_CLASSES),
+        0,  # is_festival_day — no calendar source
+        0,  # is_fast_day — no calendar source
+        is_veg,
+        int("type2_diabetes" in conditions),
+        int("prediabetes" in conditions),
+        int("hypertension" in conditions),
+        int("obesity" in conditions),
+        int("pcos" in conditions),
+        int("high_cholesterol" in conditions),
+    ]], dtype=np.float32)
 
-            prob       = model_store.health_scorer.predict_proba(features)[0]
-            compliant  = bool(np.argmax(prob) == 1)
-            confidence = float(prob[1])
-        except Exception as e:
-            log.debug(f"Health scorer inference failed: {e}")
-            compliant  = rule_health_score(dish, conditions) > 0.5
-            confidence = rule_health_score(dish, conditions)
-    else:
-        score      = rule_health_score(dish, conditions)
-        compliant  = score > 0.5
-        confidence = score
+    confidence = None
+    breakdown  = {}
+
+    if model_store.health_scorers:
+        combined, breakdown = model_store.ensemble_health_score(features)
+        if combined is not None:
+            confidence = combined
+
+    if confidence is None:
+        confidence = rule_health_score(dish, conditions)
+
+    compliant = confidence >= 0.5
 
     reasons = []
-    gi = dish.get("glycemic_index", 55) or 55
     if "type2_diabetes" in conditions and gi > 70:
         reasons.append(f"High GI ({gi}) — not ideal for diabetes")
     if "pcos" in conditions and gi > 65:
@@ -411,47 +395,27 @@ def health_score_dish(user: dict, dish: dict, context: dict | None = None) -> di
     if "hypertension" in conditions and (dish.get("calories_kcal", 0) or 0) > 500:
         reasons.append("High calorie meal — monitor sodium intake")
 
-    return {"compliant": compliant, "confidence": round(confidence, 3), "reasons": reasons}
+    return {
+        "compliant":   compliant,
+        "confidence":  round(confidence, 3),
+        "reasons":     reasons,
+        "breakdown":   breakdown,
+    }
 
 
 def detect_occasion(context: dict, user: dict | None = None) -> str:
     """
-    Detect meal occasion from context using the trained occasion model.
-
-    FIXES:
-      1. occasion_map previously used a made-up index ordering
-         (breakfast=0, lunch=1, snack=2, dinner=3, late_night=4) that did
-         NOT match the model's actual trained classes. Training log shows
-         `Classes: ['breakfast', 'dinner', 'late_night', 'lunch', 'snack']`
-         — sklearn/XGBoost's alphabetical LabelEncoder ordering. Every
-         occasion prediction from the trained model was being decoded to
-         the wrong label. Fixed to match the real ordering.
-      2. Of 17 trained features, 10 were hardcoded (season, stress_level,
-         month_position, occupation, living_situation, cooking_at_home,
-         ordered_delivery, is_festival_day, is_fast_day, is_wfh). Now:
-           - season: computed from real month (same helper as elsewhere)
-           - stress_level, occupation, living_situation, is_wfh: read from
-             the user's health profile (added in this pass) if the user
-             provided them; otherwise honestly absent -> encoder "unknown"
-             bucket, not a fabricated specific value.
-           - month_position: computed from the actual day-of-month.
-      3. Still genuinely unavailable, left at 0 and documented rather than
-         faked: commute_minutes (no onboarding field or source exists for
-         this anywhere in the codebase), cooking_at_home / ordered_delivery
-         (would need real-time signal, e.g. "what is the user doing right
-         now" — not knowable from a profile), is_festival_day / is_fast_day
-         (no festival calendar exists yet, same gap as health_score_dish).
+    Ensemble occasion detection — combines xgb + rf + dt via weighted vote.
+    Falls back to rule-based if no models loaded.
     """
     user = user or {}
-    hour       = context.get("hour", datetime.now().hour)
-    is_weekend = context.get("is_weekend", False)
+    hour         = context.get("hour", datetime.now().hour)
+    is_weekend   = context.get("is_weekend", False)
     day_of_month = context.get("day_of_month") or datetime.now().day
 
-    if model_store.occasion is not None and model_store.occasion_type != "rules":
+    if model_store.occasion_models:
         try:
             season = context.get("season", "summer")
-            # month_position: early/mid/late month, a real signal computable
-            # from the actual date instead of a hardcoded 0.
             if day_of_month <= 10:
                 month_position = "early"
             elif day_of_month <= 20:
@@ -460,13 +424,10 @@ def detect_occasion(context: dict, user: dict | None = None) -> str:
                 month_position = "late"
 
             features = np.array([[
-                float(hour), float(context.get("day_of_week", 0)),
+                float(hour),
+                float(context.get("day_of_week", 0)),
                 float(context.get("month", 1)),
                 float(context.get("budget_multiplier", 1.0)),
-                # commute_minutes: no real source exists anywhere in the
-                # codebase (no onboarding field, no profile column). Kept
-                # as a documented default rather than inventing a fake
-                # per-user value. Add a profile field if this matters.
                 float(context.get("commute_minutes", 45)),
                 float(user.get("age", 30)),
                 _label_encode(season, _SEASON_CLASSES),
@@ -475,18 +436,24 @@ def detect_occasion(context: dict, user: dict | None = None) -> str:
                 _label_encode(user.get("occupation") or "unknown", _OCCUPATION_CLASSES),
                 _label_encode(user.get("living_situation") or "unknown", _LIVING_SITUATION_CLASSES),
                 float(1 if is_weekend else 0),
-                0,  # cooking_at_home — no real-time signal source, see docstring
-                0,  # ordered_delivery — same
-                0,  # is_festival_day — no calendar source, see docstring
-                0,  # is_fast_day — same
+                0,  # cooking_at_home
+                0,  # ordered_delivery
+                0,  # is_festival_day
+                0,  # is_fast_day
                 float(1 if user.get("is_wfh") else 0),
             ]], dtype=np.float32)
-            pred = model_store.occasion.predict(features)
-            # FIX: real alphabetical training order, not a made-up mapping.
-            occasion_map = {0: "breakfast", 1: "dinner", 2: "late_night", 3: "lunch", 4: "snack"}
-            return occasion_map.get(int(pred[0]), "lunch")
+
+            # Real alphabetical class mapping confirmed from training logs:
+            # Classes: ['breakfast', 'dinner', 'late_night', 'lunch', 'snack']
+            OCCASION_MAP = {0: "breakfast", 1: "dinner", 2: "late_night", 3: "lunch", 4: "snack"}
+
+            pred_idx, breakdown = model_store.ensemble_occasion_predict(features)
+            if pred_idx is not None:
+                return OCCASION_MAP.get(pred_idx, "lunch")
         except Exception as e:
-            log.debug(f"Occasion model inference failed: {e}")
+            log.debug(f"Ensemble occasion failed: {e}")
+
+    return rule_detect_occasion(hour)
 
     return rule_detect_occasion(hour)
 
@@ -497,38 +464,54 @@ def detect_occasion(context: dict, user: dict | None = None) -> str:
 
 def reorder_boost(user: dict, dish: dict, food_graph: dict) -> float:
     """
-    Returns a small additive boost (0.0 - 0.12) based on how likely the
-    user is to reorder this dish, using the trained reorder model when a
-    history exists, falling back to a simple frequency heuristic.
+    Ensemble reorder boost (rf + logistic, AUC-weighted).
+    Returns 0.0 immediately if the user has no dish history — running
+    reorder models on empty data produces noise, not signal.
     """
     top_dishes = food_graph.get("top_dishes", []) if food_graph else []
-    match = next((d for d in top_dishes if d.get("dish") == dish.get("dish_name")), None)
+    if not top_dishes:
+        return 0.0
+
+    dish_name = dish.get("dish_name", "")
+    match = next((d for d in top_dishes if d.get("dish") == dish_name), None)
     if not match:
         return 0.0
 
     total_orders = match.get("count", 1)
+    top_dish_names = [d.get("dish") for d in top_dishes]
 
-    if model_store.reorder is not None and model_store.reorder_type != "rules":
-        try:
-            features = np.array([[
-                float(7),                              # days_between (assume ~weekly cadence, no exact ts here)
-                float(total_orders),
-                float(4.0),                             # last_rating_proxy (neutral default)
-                float(user.get("habit_strength", 0.6)),
-                float(user.get("health_literacy", 0.5)),
-                float(user.get("age", 30)),
-                float(2.0),                             # order_frequency_weekly default
-                0, 0, 0, 0, 0, 0,
-                float(1 if user.get("is_vegetarian") else 0),
-            ]], dtype=np.float32)
-            prob = model_store.reorder.predict_proba(features)[0]
-            reorder_prob = float(prob[1]) if len(prob) > 1 else float(prob[0])
-            return round(min(0.12, reorder_prob * 0.12), 4)
-        except Exception as e:
-            log.debug(f"Reorder model inference failed: {e}")
+    if not model_store.reorder_models:
+        # Fallback heuristic: frequency-based, capped
+        return round(min(0.10, 0.02 * total_orders), 4)
 
-    # Fallback heuristic: more frequent orders → higher boost, capped
-    return round(min(0.10, 0.02 * total_orders), 4)
+    try:
+        dish_rank = top_dish_names.index(dish_name) if dish_name in top_dish_names else 10
+        days_between = max(1, 7 - dish_rank)
+        season_enc = _label_encode(_get_season(datetime.now().month), _SEASON_CLASSES)
+
+        features = np.array([[
+            float(total_orders),
+            float(days_between),
+            float(user.get("health_literacy", 0.5)),
+            float(user.get("habit_strength", 0.3)),
+            float(user.get("age", 30)),
+            float(user.get("bmi", 23.0)),
+            float(season_enc),
+            float(dish_rank),
+            0.0,  # last_rating_proxy — no rating data yet
+            0.0,  # order_frequency_weekly — no real order tracking yet
+            0.0,  # stress_profile
+            0.0,  # month_position
+            0.0,  # trigger_type
+            float(1 if user.get("is_vegetarian") else 0),
+        ]], dtype=np.float32)
+
+        reorder_prob, _ = model_store.ensemble_reorder_score(features)
+        return round(min(reorder_prob * 0.12, 0.12), 4)
+
+    except Exception as e:
+        log.debug(f"Ensemble reorder failed: {e}")
+        return round(min(0.10, 0.02 * total_orders), 4)
 
 
 # ════════════════════════════════════════════════════════════
@@ -563,9 +546,16 @@ def get_recommendations(
     occasion_explicit: bool = False,
 ) -> list:
     """
-    Main recommendation function.
-    occasion_explicit=True means the user picked a specific tab in the UI
-    (e.g. "Breakfast") and filtering must be strict — no silent fallback.
+    Main recommendation function with ensemble scoring + cold-start blend.
+
+    Cold-start blend logic:
+      blend_weight = min(1.0, total_meals_logged / 10)
+      final_score  = (1 - blend_weight) * cold_start_score
+                   + blend_weight       * ensemble_score
+
+      At 0 meals  → pure cold-start (demographic/regional priors)
+      At 10+ meals → pure ensemble (fully personalized)
+      Between 1-9  → smooth linear blend, cold-start fades as real data grows
     """
     if not DISH_CANDIDATES:
         log.warning("No dish candidates loaded")
@@ -584,8 +574,13 @@ def get_recommendations(
 
     is_veg = bool(user.get("is_vegetarian", False))
 
-    top_dishes       = [d.get("dish") for d in (food_graph or {}).get("top_dishes", [])]
+    total_meals    = int((food_graph or {}).get("total_meals_logged", 0))
+    top_dishes     = [d.get("dish") for d in (food_graph or {}).get("top_dishes", [])]
     cuisine_affinity = (food_graph or {}).get("cuisine_affinity", {})
+
+    # Cold-start blend weight: 0.0 = pure cold-start, 1.0 = pure ensemble
+    blend_weight = min(1.0, total_meals / 10.0)
+    use_cold_start = blend_weight < 1.0 and model_store.cold_start_models
 
     user["top_dishes"] = top_dishes
     user["conditions"] = conditions
@@ -594,62 +589,100 @@ def get_recommendations(
     candidates = filter_by_occasion(candidates, occasion, strict=occasion_explicit)
     candidates = filter_by_dietary(candidates, restrictions, is_veg)
 
+    # Build cold-start feature vector once if we need it (same for all dishes)
+    cold_start_cuisine_probs = None
+    if use_cold_start:
+        try:
+            cold_features = np.array([[
+                float(user.get("age", 28)),
+                float(user.get("bmi", 23.0)),
+                float(1 if user.get("is_vegetarian") else 0),
+                float(1 if user.get("is_wfh") else 0),
+                _label_encode(user.get("income_tier") or "unknown", _INCOME_CLASSES),
+                _label_encode(user.get("region") or "unknown", _REGION_CLASSES),
+                _label_encode(user.get("occupation") or "unknown", _OCCUPATION_CLASSES),
+                _label_encode(user.get("living_situation") or "unknown", _LIVING_SITUATION_CLASSES),
+                int("type2_diabetes" in conditions),
+                int("prediabetes" in conditions),
+                int("hypertension" in conditions),
+                int("obesity" in conditions),
+                int("pcos" in conditions),
+                int("high_cholesterol" in conditions),
+                float(context.get("hour", 12)),
+                float(context.get("day_of_week", 0)),
+                float(context.get("month", 1)),
+                float(1 if context.get("is_weekend") else 0),
+                _label_encode(context.get("season", "summer"), _SEASON_CLASSES),
+                float(total_meals),
+                0.0, 0.0, 0.0, 0.0,  # behavioral features — unavailable for cold-start users
+                0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0,
+            ]], dtype=np.float32)
+
+            cold_cuisine_idx, cold_breakdown = model_store.ensemble_cold_start_predict(cold_features)
+            # Map cuisine class index to cuisine name using KNN's y_classes
+            # (saved in checkpoint metadata)
+            knn_model = model_store.cold_start_models.get("knn")
+            if knn_model is not None and cold_cuisine_idx is not None:
+                cold_start_cuisine_probs = cold_breakdown
+                log.debug(f"cold_start predicted cuisine idx={cold_cuisine_idx}, "
+                          f"blend_weight={blend_weight:.2f}")
+        except Exception as e:
+            log.debug(f"Cold-start feature build failed: {e}")
+
     scored = []
     for rank, dish in enumerate(candidates):
         cuisine = dish.get("cuisine_type", "north_indian")
 
-        # FIX: blend real behavioral affinity (food_graph, builds up over
-        # time) with a region-based prior (instant, works for day-one
-        # users with zero history). Behavioral signal wins once it exists
-        # — region_affinity only matters when cuisine_affinity has nothing
-        # to say about this cuisine yet (the 0.3 default below), which is
-        # exactly the brand-new-user case region was supposed to help with.
+        # Region-behavioral cuisine affinity blend
         region = user.get("region")
         region_affinity = REGION_CUISINE_AFFINITY.get(region, {}).get(cuisine, 0.0)
         behavioral_affinity = cuisine_affinity.get(cuisine)
         if behavioral_affinity is not None:
-            # Real behavior exists for this cuisine — blend, weighted
-            # toward what the user has actually done, not just where
-            # they're from.
             user["cuisine_affinity_score"] = round(
                 0.75 * behavioral_affinity + 0.25 * region_affinity, 3
             )
         else:
-            # No behavioral signal yet for this cuisine — use region
-            # affinity if we have one, else the old neutral default.
             user["cuisine_affinity_score"] = region_affinity if region_affinity else 0.3
 
-        # FIX: health_match_score was a flat 0.6 for every dish/user. The
-        # health scorer model already computes a real per-dish compliance
-        # confidence (health_score_dish) — compute it FIRST and feed that
-        # real number into the ranker's feature vector instead of a
-        # disconnected constant. This also means the ranker and the
-        # displayed health_compliant badge are now backed by the same
-        # number instead of two unrelated values.
+        # Health ensemble — computed first, feeds into ranker feature vector
         health_info = health_score_dish(user, dish, context)
         user["health_match_score"] = health_info["confidence"]
 
-        # price_match_score: HONEST LIMITATION, not fully fixed. Dishes in
-        # nutrition_kb have no price field — only restaurant menu items
-        # will (Phase 2, restaurant_menu_items table, not built yet). Until
-        # then there is no real per-dish price to match against budget.
-        # Using a flat constant here would be dishonest about that; instead
-        # we use the user's stated budget_preferences (if onboarding
-        # collected one) as a coarse self-reported signal, and an explicit
-        # neutral 0.5 — not 0.7 — when nothing is known, so this doesn't
-        # masquerade as a confident computed match.
+        # Price match — real when dish has a price (restaurant menu endpoint)
+        dish_price   = dish.get("price")
         budget_prefs = user.get("budget_preferences") or {}
-        if budget_prefs.get("preferred_range"):
-            # User has stated a budget — at least real signal exists, even
-            # though we can't check it against an actual dish price yet.
+        if dish_price is not None:
+            budget_midpoint = float(
+                budget_prefs.get("preferred_range")
+                or user.get("avg_cost_for_two", 400) / 2
+                or 200
+            )
+            raw = 1.0 - abs(dish_price - budget_midpoint) / max(budget_midpoint, 1)
+            user["price_match_score"] = round(max(0.0, min(1.0, raw)), 3)
+        elif budget_prefs.get("preferred_range"):
             user["price_match_score"] = 0.6
         else:
             user["price_match_score"] = 0.5
 
-        score = score_dish(user, dish, context, rank)
-        boost = reorder_boost(user, dish, food_graph or {})
+        # Ensemble ranker score (now returns tuple)
+        ensemble_score, ranker_breakdown = score_dish(user, dish, context, rank)
 
-        final_score = round(score + boost, 4)
+        # Cold-start blend
+        if use_cold_start and cold_start_cuisine_probs is not None:
+            # Cold-start signal: cuisine affinity score from the ensemble
+            # cold-start predictor, used as a per-dish signal by checking
+            # whether this dish's cuisine aligns with the predicted preference.
+            # Simple proxy: if region_affinity is nonzero, cold-start agrees
+            # with regional priors. Blend linearly by meal count.
+            cold_signal = user.get("cuisine_affinity_score", 0.3)
+            blended_score = (1 - blend_weight) * cold_signal + blend_weight * ensemble_score
+        else:
+            blended_score = ensemble_score
+
+        boost = reorder_boost(user, dish, food_graph or {})
+        final_score = round(blended_score + boost, 4)
 
         scored.append({
             "dish_name":         dish.get("dish_name"),
@@ -667,9 +700,16 @@ def get_recommendations(
                 "fiber_g":   dish.get("fiber_g"),
                 "gi":        dish.get("glycemic_index"),
             },
+            "price":     dish.get("price"),
             "is_veg":    dish.get("is_veg"),
             "allergens": dish.get("allergens", []),
             "occasion":  occasion,
+            # Per-request model breakdown — logged, not sent to frontend
+            "_models": {
+                "ranker":       ranker_breakdown,
+                "health":       health_info.get("breakdown", {}),
+                "blend_weight": round(blend_weight, 2),
+            },
         })
 
     scored.sort(key=lambda x: x["score"], reverse=True)
