@@ -4,7 +4,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
-from app.models.intelligence import UserHealthProfile, FoodGraph
+from app.models.food_event import FoodEvent
 from app.core.database import Base
 from app.core.config import get_settings
 
@@ -17,31 +17,27 @@ if config.config_file_name is not None:
 config.set_main_option("sqlalchemy.url", settings.database_url)
 target_metadata = Base.metadata
 
-# FIX: see services/ingestion/alembic/env.py for the full explanation.
-# user-intelligence shares its Neon database with auth, ingestion,
-# recommendation, and conversation. Without an isolated version_table,
-# all services fight over the same "alembic_version" row.
-#
-# IMPORTANT one-time step if you already ran `alembic upgrade head` BEFORE
-# this fix existed (you did — add_profile_signal_fields already applied
-# and stamped the old shared "alembic_version" table): this new
-# "alembic_version_user_intelligence" table starts empty, so Alembic will
-# think nothing has been applied yet and will try to re-run
-# add_profile_signal_fields, which will fail with "column already exists"
-# since it really did already run. Before starting this service again,
-# manually seed the new table once:
-#
-#   INSERT INTO alembic_version_user_intelligence (version_num)
-#   VALUES ('add_profile_signal_fields');
-#
-# (run via Adminer's SQL command box, or psql against the Neon DB directly)
+# FIX: ingestion shares its Neon database with auth, user-intelligence,
+# recommendation, and conversation (all point at the same
+# DATABASE_URL/NEON_DATABASE_URL per docker-compose.yml). Alembic's default
+# version-tracking table name is "alembic_version" for every service, so
+# without an explicit version_table, two services with independent
+# migration histories collide on the same row — whichever applies a
+# migration last "wins" and stamps a revision ID the OTHER service's
+# versions/ folder has never heard of. That's exactly what happened here:
+# user-intelligence applied add_profile_signal_fields, stamped the shared
+# alembic_version row with that ID, then ingestion started up and failed
+# because its own versions/ folder has no such revision.
+# Giving each service its own version_table name fixes this permanently —
+# every service that runs its own migrations against this shared DB needs
+# the same treatment (see auth/alembic/env.py, user-intelligence/alembic/env.py).
 
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url, target_metadata=target_metadata, literal_binds=True,
-        version_table="alembic_version_user_intelligence",
+        version_table="alembic_version_ingestion",
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -50,7 +46,7 @@ def run_migrations_offline() -> None:
 def do_run_migrations(connection: Connection) -> None:
     context.configure(
         connection=connection, target_metadata=target_metadata,
-        version_table="alembic_version_user_intelligence",
+        version_table="alembic_version_ingestion",
     )
     with context.begin_transaction():
         context.run_migrations()

@@ -309,6 +309,7 @@ services:
       ACTIVE_REORDER: xgb
       ENVIRONMENT: development
     volumes:
+      - ./services/recommendation/app:/app/app
       - ./services/ml-training/models:/app/models:ro
     ports:
       - "8005:8005"
