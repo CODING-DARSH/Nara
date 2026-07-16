@@ -268,10 +268,11 @@ def filter_by_occasion(dishes: list, occasion: str, strict: bool = False) -> lis
     """
     if not occasion:
         return dishes
-    filtered = [d for d in dishes if occasion in _dish_occasion_tags(d)]
+    # filtered = [d for d in dishes if occasion in _dish_occasion_tags(d)]
     if strict:
-        return filtered
-    return filtered if filtered else dishes
+        return dishes
+    # return filtered if filtered else dishes
+    return dishes
 
 
 def filter_by_dietary(dishes: list, restrictions: list, is_veg: bool) -> list:

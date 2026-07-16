@@ -67,7 +67,7 @@ async def ensure_dishes_loaded():
         return
     async with LocalSession() as db:
         result = await db.execute(text("""
-            SELECT dish_name, cuisine_type, is_veg, allergens, occasion_tags,
+            SELECT dish_name, cuisine_type, is_veg, allergens,
                    glycemic_index, glycemic_load,
                    per_serving->>'calories_kcal' as calories_kcal,
                    per_serving->>'protein_g'     as protein_g,
@@ -88,14 +88,14 @@ async def ensure_dishes_loaded():
                     d[key] = None
             # occasion_tags comes back as a list already (JSONB), but guard
             # against it arriving as a raw string from older rows.
-            tags = d.get("occasion_tags")
-            if isinstance(tags, str):
-                try:
-                    d["occasion_tags"] = json.loads(tags)
-                except Exception:
-                    d["occasion_tags"] = []
-            elif tags is None:
-                d["occasion_tags"] = []
+            # tags = d.get("occasion_tags")
+            # if isinstance(tags, str):
+            #     try:
+            #         d["occasion_tags"] = json.loads(tags)
+            #     except Exception:
+            #         d["occasion_tags"] = []
+            # elif tags is None:
+            #     d["occasion_tags"] = []
             dishes.append(d)
         set_dish_candidates(dishes)
         log.info(f"Loaded {len(dishes)} dishes from KB (with occasion_tags)")
@@ -222,12 +222,7 @@ async def recommend(
         "occasion_strict": bool(occasion),
         "count":           len(recommendations),
         "recommendations": recommendations,
-        "models_used": {
-            "ranker":        model_store.ranker_type,
-            "health_scorer": model_store.health_type,
-            "occasion":      model_store.occasion_type,
-            "reorder":       model_store.reorder_type,
-        },
+        "_models": model_store.status(),
     }
 
 
@@ -394,6 +389,165 @@ async def nearby_restaurants(
         for r in restaurants:
             r["distance_km"] = round(float(r["distance_km"]), 2)
         return {"count": len(restaurants), "restaurants": restaurants}
+
+
+@router.get("/restaurants/{restaurant_id}")
+async def get_restaurant_detail(
+    restaurant_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Returns a single restaurant's details + its full menu scored and ranked
+    by the recommendation pipeline. This is the backend for the
+    restaurant-detail page (tap a restaurant card → see its ranked menu).
+
+    Dish candidates are scoped to this restaurant's real menu_items from
+    restaurant_menu_items, not the global nutrition_kb pool — this is the
+    first endpoint where price_match_score is genuinely computed from a
+    real dish price rather than a placeholder.
+    """
+    user_id = current_user.get("user_id")
+    token   = current_user.get("token")
+
+    async with LocalSession() as db:
+        # Fetch restaurant details
+        resto_result = await db.execute(
+            text("""
+                SELECT id, name, cuisine_types, area, avg_cost_for_two,
+                       rating, delivery_enabled, delivery_time_min
+                FROM restaurants
+                WHERE id = :rid AND is_active = TRUE
+            """),
+            {"rid": restaurant_id},
+        )
+        resto = resto_result.mappings().first()
+        if not resto:
+            from fastapi import HTTPException, status
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail="Restaurant not found")
+        resto = dict(resto)
+
+        # Fetch this restaurant's real menu items joined with nutrition_kb
+        # for the full feature vector — this is the real candidate set for
+        # this endpoint, not the global DISH_CANDIDATES pool.
+        menu_result = await db.execute(
+            text("""
+                SELECT
+                    rmi.dish_name,
+                    rmi.cuisine_type,
+                    rmi.price,
+                    rmi.is_available,
+                    nk.is_veg,
+                    nk.allergens,
+                    nk.occasion_tags,
+                    nk.glycemic_index,
+                    nk.glycemic_load,
+                    nk.per_serving->>'calories_kcal'  AS calories_kcal,
+                    nk.per_serving->>'protein_g'      AS protein_g,
+                    nk.per_serving->>'carbs_g'        AS carbs_g,
+                    nk.per_serving->>'fat_g'          AS fat_g,
+                    nk.per_serving->>'fiber_g'        AS fiber_g
+                FROM restaurant_menu_items rmi
+                LEFT JOIN nutrition_kb nk ON nk.dish_name = rmi.dish_name
+                WHERE rmi.restaurant_id = :rid
+                  AND rmi.is_available = TRUE
+                ORDER BY rmi.dish_name
+            """),
+            {"rid": restaurant_id},
+        )
+        menu_items = [dict(r) for r in menu_result.mappings().all()]
+
+    if not menu_items:
+        return {
+            "restaurant": resto,
+            "count": 0,
+            "menu": [],
+        }
+
+    # Score and rank the menu using the same full pipeline as the main
+    # recommend endpoint — the key difference is the candidate set is this
+    # restaurant's menu only, and each dish carries a real price from
+    # restaurant_menu_items, making price_match_score a real computation
+    # instead of the placeholder it is for the global pool.
+    profile    = await fetch_user_profile(token)
+    food_graph = await fetch_food_graph(token)
+
+    now     = datetime.now()
+    context = _build_context(now, None, None, None, profile)
+    user    = _build_user(profile, user_id, food_graph)
+    # Pass avg_cost_for_two from this specific restaurant so the budget
+    # midpoint in price_match_score reflects where this restaurant sits
+    # price-wise, not a generic user default.
+    user["avg_cost_for_two"] = resto.get("avg_cost_for_two", 400)
+
+    # Score every available menu item through the pipeline
+    scored = []
+    for item in menu_items:
+        # Temporarily inject this restaurant's menu item as the candidate
+        # so get_recommendations' per-dish scoring logic runs on it.
+        # We call the individual scoring functions directly rather than
+        # going through get_recommendations() (which works on DISH_CANDIDATES
+        # as the candidate pool) to avoid replacing the global pool.
+        from app.pipeline.ranker import (
+            score_dish, health_score_dish, reorder_boost,
+            REGION_CUISINE_AFFINITY,
+        )
+
+        cuisine = item.get("cuisine_type", "north_indian")
+        region  = user.get("region")
+        region_affinity = REGION_CUISINE_AFFINITY.get(region, {}).get(cuisine, 0.0)
+        cuisine_affinity = (food_graph or {}).get("cuisine_affinity", {})
+        behavioral = cuisine_affinity.get(cuisine)
+        if behavioral is not None:
+            user["cuisine_affinity_score"] = round(0.75 * behavioral + 0.25 * region_affinity, 3)
+        else:
+            user["cuisine_affinity_score"] = region_affinity if region_affinity else 0.3
+
+        health_info = health_score_dish(user, item, context)
+        user["health_match_score"] = health_info["confidence"]
+
+        # Real price computation — this is what makes this endpoint
+        # different from the global pool. dish["price"] comes from
+        # restaurant_menu_items, not nutrition_kb.
+        dish_price = float(item.get("price") or 0)
+        budget_midpoint = float(
+            (user.get("budget_preferences") or {}).get("preferred_range")
+            or (resto.get("avg_cost_for_two", 400) / 2)
+        )
+        raw = 1.0 - abs(dish_price - budget_midpoint) / max(budget_midpoint, 1)
+        user["price_match_score"] = round(max(0.0, min(1.0, raw)), 3)
+
+        dish_score = score_dish(user, item, context, len(scored))
+        boost      = reorder_boost(user, item, food_graph or {})
+        final      = round(dish_score + boost, 4)
+
+        scored.append({
+            "dish_name":         item["dish_name"],
+            "cuisine_type":      item["cuisine_type"],
+            "price":             float(item["price"]),
+            "score":             final,
+            "health_compliant":  health_info["compliant"],
+            "health_confidence": health_info["confidence"],
+            "health_reasons":    health_info["reasons"],
+            "nutrition": {
+                "calories":  item.get("calories_kcal"),
+                "protein_g": item.get("protein_g"),
+                "carbs_g":   item.get("carbs_g"),
+                "fat_g":     item.get("fat_g"),
+                "fiber_g":   item.get("fiber_g"),
+                "gi":        item.get("glycemic_index"),
+            },
+            "is_veg":    item.get("is_veg"),
+            "allergens": item.get("allergens", []),
+        })
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+
+    return {
+        "restaurant": resto,
+        "count":      len(scored),
+        "menu":       scored,
+    }
 
 
 def _get_season(month: int) -> str:
