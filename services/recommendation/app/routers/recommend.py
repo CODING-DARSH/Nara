@@ -19,13 +19,20 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, Query
 from fastapi.security import HTTPBearer
+from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.database import LocalSession
 from app.core.security import get_current_user
 from app.core.model_loader import model_store
+from app.core.redis import (
+    get_cached_recommendations, set_cached_recommendations,
+    get_recently_shown, record_shown_dishes, invalidate_recs_cache,
+)
+from app.core.kafka import publish_feedback_event
 from app.pipeline.ranker import get_recommendations, set_dish_candidates
+from app.pipeline import ranker as ranker_module
 
 log      = logging.getLogger("nara.recommendation.router")
 router   = APIRouter(prefix="/v1/recommend", tags=["recommend"])
@@ -67,7 +74,7 @@ async def ensure_dishes_loaded():
         return
     async with LocalSession() as db:
         result = await db.execute(text("""
-            SELECT dish_name, cuisine_type, is_veg, allergens,
+            SELECT dish_name, cuisine_type, is_veg, allergens, occasion_tags,
                    glycemic_index, glycemic_load,
                    per_serving->>'calories_kcal' as calories_kcal,
                    per_serving->>'protein_g'     as protein_g,
@@ -88,14 +95,17 @@ async def ensure_dishes_loaded():
                     d[key] = None
             # occasion_tags comes back as a list already (JSONB), but guard
             # against it arriving as a raw string from older rows.
-            # tags = d.get("occasion_tags")
-            # if isinstance(tags, str):
-            #     try:
-            #         d["occasion_tags"] = json.loads(tags)
-            #     except Exception:
-            #         d["occasion_tags"] = []
-            # elif tags is None:
-            #     d["occasion_tags"] = []
+            # FIX: the SQL above never actually selected occasion_tags at
+            # all until now, so this guard was dead code protecting a key
+            # that could never be present. Both are needed together.
+            tags = d.get("occasion_tags")
+            if isinstance(tags, str):
+                try:
+                    d["occasion_tags"] = json.loads(tags)
+                except Exception:
+                    d["occasion_tags"] = []
+            elif tags is None:
+                d["occasion_tags"] = []
             dishes.append(d)
         set_dish_candidates(dishes)
         log.info(f"Loaded {len(dishes)} dishes from KB (with occasion_tags)")
@@ -201,12 +211,22 @@ async def recommend(
     user_id = current_user["user_id"]
     token   = credentials.credentials
 
+    now         = datetime.now()
+    hour_bucket = now.hour  # cache granularity — a request 3 min apart in the
+                             # same hour/occasion reuses the cached list instead
+                             # of re-running the full ensemble.
+
+    cached = await get_cached_recommendations(user_id, occasion, hour_bucket)
+    if cached is not None:
+        return {**cached, "_cache": "hit"}
+
     food_graph = await fetch_food_graph(token)
     profile    = await fetch_user_profile(token)
 
-    now     = datetime.now()
     context = _build_context(now, lat, lng, occasion, profile)
     user    = _build_user(profile, user_id, food_graph)
+
+    recently_shown = await get_recently_shown(user_id)
 
     # FIX 2: occasion_explicit=True whenever the caller passed an occasion
     # (i.e. the user tapped a specific tab in the UI) -> strict filtering,
@@ -214,9 +234,10 @@ async def recommend(
     recommendations = get_recommendations(
         user, context, food_graph, n=n,
         occasion_explicit=bool(occasion),
+        recently_shown=recently_shown,
     )
 
-    return {
+    response = {
         "user_id":         user_id,
         "occasion":        context["occasion"],
         "occasion_strict": bool(occasion),
@@ -224,6 +245,75 @@ async def recommend(
         "recommendations": recommendations,
         "_models": model_store.status(),
     }
+
+    await set_cached_recommendations(user_id, occasion, hour_bucket, response)
+
+    shown_dishes = [{"dish_name": r["dish_name"], "cuisine_type": r.get("cuisine_type")}
+                    for r in recommendations if r.get("dish_name")]
+    dish_names   = [d["dish_name"] for d in shown_dishes]
+    await record_shown_dishes(user_id, dish_names)
+
+    # Feedback loop: log this impression so it can eventually be joined
+    # against clicks/orders for retraining. Fire-and-forget — never blocks
+    # or fails the response.
+    await publish_feedback_event({
+        "event_type":  "impression",
+        "user_id":     user_id,
+        "occasion":    context["occasion"],
+        "dishes":      shown_dishes,
+    })
+
+    return response
+
+
+class FeedbackIn(BaseModel):
+    dish_name: str
+    cuisine_type: Optional[str] = None  # lets the consumer update cuisine_affinity
+                                         # without a cross-service dish_name lookup
+    action: str            # "skip" | "click" | "order"
+    occasion: Optional[str] = None
+    rank: Optional[int]     = None  # position it was shown at, if known
+
+
+@router.post("/feedback")
+async def submit_feedback(
+    body: FeedbackIn,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Explicit user action on a recommended dish. This is the other half of
+    the feedback loop alongside the impression event published in `/` —
+    together they let a future retraining job join "what was shown" against
+    "what the user actually did with it" instead of that data disappearing
+    on every request like it did before.
+
+    Consumed by user-intelligence/app/workers/feedback_update_worker.py,
+    which nudges FoodGraph.cuisine_affinity based on action — see that
+    file for the actual weighting.
+    """
+    if body.action not in ("skip", "click", "order"):
+        from fastapi import HTTPException, status
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail="action must be one of: skip, click, order")
+
+    user_id = current_user["user_id"]
+
+    await publish_feedback_event({
+        "event_type":   "feedback",
+        "user_id":      user_id,
+        "dish_name":    body.dish_name,
+        "cuisine_type": body.cuisine_type,
+        "action":       body.action,
+        "occasion":     body.occasion,
+        "rank":         body.rank,
+    })
+
+    # An order/click is a real signal that should be reflected on the very
+    # next request, not up to RECS_CACHE_TTL_SECONDS later.
+    if body.action in ("click", "order"):
+        await invalidate_recs_cache(user_id)
+
+    return {"status": "recorded"}
 
 
 @router.get("/with-restaurants")
@@ -253,16 +343,37 @@ async def recommend_with_restaurants(
     context = _build_context(now, lat, lng, occasion, profile)
     user    = _build_user(profile, user_id, food_graph)
 
-    recommendations = get_recommendations(
-        user, context, food_graph, n=n,
-        occasion_explicit=bool(occasion),
-    )
-
-    cuisines_needed = list({r["cuisine_type"] for r in recommendations if r.get("cuisine_type")})
-
+    # FIX: this endpoint used to fetch exactly `n` recommendations, match
+    # each to nearby restaurants, and return whatever came back — but any
+    # dish whose cuisine has ZERO real restaurants within radius_km gets
+    # silently dropped by the frontend (it only builds a restaurant card
+    # per dish that actually has nearby_restaurants). If a user's genuine
+    # top-preference cuisine (e.g. gujarati) has little/no restaurant
+    # coverage near their current location, their top recommendations
+    # would vanish from this view entirely — while /v1/recommend/ (no
+    # restaurant matching) kept showing them correctly, producing exactly
+    # the "Home shows gujarati, Discover shows north_indian/idli instead"
+    # mismatch. Fix: over-fetch and keep expanding the candidate pool
+    # until we have `n` dishes that actually have a nearby match (or we
+    # hit a sane cap), preserving score order throughout — so among
+    # dishes that DO have real coverage, the user's true preference order
+    # still wins, instead of an arbitrary lower-affinity cuisine
+    # dominating purely because it happens to have nearby restaurants.
+    MAX_FETCH_MULTIPLIER = 4
+    fetch_n = n
+    recommendations = []
+    matched = []
     restaurants_by_cuisine = {}
-    if cuisines_needed:
-        async with LocalSession() as db:
+
+    async with LocalSession() as db:
+        for attempt in range(MAX_FETCH_MULTIPLIER):
+            recommendations = get_recommendations(
+                user, context, food_graph, n=fetch_n,
+                occasion_explicit=bool(occasion),
+            )
+            cuisines_needed = list({r["cuisine_type"] for r in recommendations
+                                     if r.get("cuisine_type") and r["cuisine_type"] not in restaurants_by_cuisine})
+
             for cuisine in cuisines_needed:
                 result = await db.execute(
                     text("""
@@ -293,8 +404,23 @@ async def recommend_with_restaurants(
                     r["distance_km"] = round(float(r["distance_km"]), 2)
                 restaurants_by_cuisine[cuisine] = restos
 
-    for rec in recommendations:
-        rec["nearby_restaurants"] = restaurants_by_cuisine.get(rec.get("cuisine_type"), [])
+            for rec in recommendations:
+                rec["nearby_restaurants"] = restaurants_by_cuisine.get(rec.get("cuisine_type"), [])
+
+            matched = [r for r in recommendations if r["nearby_restaurants"]]
+            if len(matched) >= n or fetch_n >= len(ranker_module.DISH_CANDIDATES):
+                break
+            # Not enough dishes with real restaurant coverage yet — pull a
+            # wider candidate pool (still in original score order) and
+            # retry the match instead of returning a thin/skewed result.
+            fetch_n = min(fetch_n * 3, len(ranker_module.DISH_CANDIDATES) or fetch_n * 3)
+
+    # Keep original ranking order (score-sorted), just filtered down to
+    # ones with a real nearby option — this is what actually fixes the
+    # "shows a different, lower-preference cuisine" symptom, since it's
+    # no longer "whatever happened to have coverage" but "your best
+    # matches, restricted to what's actually deliverable near you."
+    recommendations = matched[:n]
 
     return {
         "user_id":         user_id,
@@ -517,7 +643,7 @@ async def get_restaurant_detail(
         raw = 1.0 - abs(dish_price - budget_midpoint) / max(budget_midpoint, 1)
         user["price_match_score"] = round(max(0.0, min(1.0, raw)), 3)
 
-        dish_score = score_dish(user, item, context, len(scored))
+        dish_score, _ranker_breakdown = score_dish(user, item, context, len(scored))
         boost      = reorder_boost(user, item, food_graph or {})
         final      = round(dish_score + boost, 4)
 
