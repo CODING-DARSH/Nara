@@ -10,6 +10,7 @@ Fixes applied:
   3. Reorder model wired in as a real signal (frequency + recency boost).
 """
 import logging
+import random
 from datetime import datetime
 import numpy as np
 import pandas as pd
@@ -111,6 +112,11 @@ _OCCASION_CLASSES = sorted(["breakfast", "dinner", "late_night", "lunch", "snack
 _MONTH_POSITION_CLASSES    = sorted(["early", "mid", "late"])
 _OCCUPATION_CLASSES        = sorted(["student", "salaried", "self_employed", "homemaker", "unemployed", "retired", "unknown"])
 _LIVING_SITUATION_CLASSES  = sorted(["alone", "with_family", "with_roommates", "with_partner", "unknown"])
+# reorder_prediction's "trigger_type" categorical — same unverifiable-encoder
+# situation as above (train_random_forest.py/train_logistic.py never call
+# encoder.save()). Best-effort placeholder matching the 5 classes named in
+# config.py's REORDER_FEATURES comment.
+_TRIGGER_TYPE_CLASSES      = sorted(["convenience", "craving", "festival", "habit", "stress"])
 
 
 def _label_encode(value: str, classes: list) -> float:
@@ -268,11 +274,10 @@ def filter_by_occasion(dishes: list, occasion: str, strict: bool = False) -> lis
     """
     if not occasion:
         return dishes
-    # filtered = [d for d in dishes if occasion in _dish_occasion_tags(d)]
+    filtered = [d for d in dishes if occasion in _dish_occasion_tags(d)]
     if strict:
-        return dishes
-    # return filtered if filtered else dishes
-    return dishes
+        return filtered
+    return filtered if filtered else dishes
 
 
 def filter_by_dietary(dishes: list, restrictions: list, is_veg: bool) -> list:
@@ -456,8 +461,6 @@ def detect_occasion(context: dict, user: dict | None = None) -> str:
 
     return rule_detect_occasion(hour)
 
-    return rule_detect_occasion(hour)
-
 
 # ════════════════════════════════════════════════════════════
 # FIX 3 — Reorder model wired in as a real signal
@@ -486,28 +489,44 @@ def reorder_boost(user: dict, dish: dict, food_graph: dict) -> float:
         return round(min(0.10, 0.02 * total_orders), 4)
 
     try:
-        dish_rank = top_dish_names.index(dish_name) if dish_name in top_dish_names else 10
-        days_between = max(1, 7 - dish_rank)
-        season_enc = _label_encode(_get_season(datetime.now().month), _SEASON_CLASSES)
+        dish_rank    = top_dish_names.index(dish_name) if dish_name in top_dish_names else 10
+        days_between = max(1, 7 - dish_rank)  # proxy: no real per-dish order timestamps tracked yet
 
-        features = np.array([[
-            float(total_orders),
-            float(days_between),
-            float(user.get("health_literacy", 0.5)),
-            float(user.get("habit_strength", 0.3)),
-            float(user.get("age", 30)),
-            float(user.get("bmi", 23.0)),
-            float(season_enc),
-            float(dish_rank),
-            0.0,  # last_rating_proxy — no rating data yet
-            0.0,  # order_frequency_weekly — no real order tracking yet
-            0.0,  # stress_profile
-            0.0,  # month_position
-            0.0,  # trigger_type
-            float(1 if user.get("is_vegetarian") else 0),
-        ]], dtype=np.float32)
+        now = datetime.now()
+        day_of_month = now.day
+        if day_of_month <= 10:
+            month_position = "early"
+        elif day_of_month <= 20:
+            month_position = "mid"
+        else:
+            month_position = "late"
 
-        reorder_prob, _ = model_store.ensemble_reorder_score(features)
+        # FIX: previous vector was built as a hardcoded positional list that
+        # didn't match REORDER_FEATURES training order at all (fields
+        # swapped, bmi/dish_rank injected as if trained — they never were).
+        # Build a name-keyed dict instead and let model_store order it per
+        # model using each model's own saved feature_cols.
+        raw = {
+            # numerical
+            "days_between":            float(days_between),
+            "total_orders_dish":       float(total_orders),
+            "last_rating_proxy":       0.0,  # no rating data collected yet
+            "habit_strength":          float(user.get("habit_strength", 0.3)),
+            "health_literacy":         float(user.get("health_literacy", 0.5)),
+            "age":                     float(user.get("age", 30)),
+            "order_frequency_weekly":  0.0,  # no real order-frequency tracking yet
+            # categorical (label-encoded, same scheme as elsewhere in this file)
+            "trigger_type":  _label_encode("habit", _TRIGGER_TYPE_CLASSES),  # best-effort: a reorder is, by definition, a repeat/habit signal
+            "income_tier":   _label_encode(user.get("income_tier") or "unknown", _INCOME_CLASSES),
+            "occupation":    _label_encode(user.get("occupation") or "unknown", _OCCUPATION_CLASSES),
+            "stress_profile":_label_encode(user.get("stress_level") or "unknown", _STRESS_CLASSES),
+            "season":        _label_encode(_get_season(now.month), _SEASON_CLASSES),
+            "month_position":_label_encode(month_position, _MONTH_POSITION_CLASSES),
+            # binary
+            "is_vegetarian": float(1 if user.get("is_vegetarian") else 0),
+        }
+
+        reorder_prob, _ = model_store.ensemble_reorder_score(raw)
         return round(min(reorder_prob * 0.12, 0.12), 4)
 
     except Exception as e:
@@ -538,6 +557,109 @@ REGION_CUISINE_AFFINITY = {
     "northeast": {"street_food": 0.4},  # no dedicated northeastern cuisine_type exists in the KB yet
 }
 
+# Candidate generation — the retrieval stage that was missing entirely.
+# Previously every request ran the full ensemble ranker (LightGBM/XGBoost/
+# health-scorer/reorder-boost, all real model inference) over the ENTIRE
+# filtered dish pool, however large nutrition_kb grows. This narrows that
+# pool to a bounded size using cheap arithmetic (no model inference) before
+# the expensive per-dish ensemble loop runs — the standard two-stage
+# retrieval-then-rank split, just without the embedding/ANN machinery that
+# isn't warranted at this catalog size (see conversation notes: heuristic
+# retrieval now, embeddings only if free-text search or a much larger
+# catalog make structured filtering insufficient later).
+MAX_CANDIDATES_PER_REQUEST = 250
+MIN_CANDIDATES_PER_CUISINE = 5  # floor so a low-affinity cuisine isn't fully
+                                  # starved — keeps room for genuine
+                                  # discovery and for _diversify() downstream
+
+
+def _cuisine_affinity_score(cuisine: str, region: str | None, cuisine_affinity: dict) -> float:
+    """
+    Same blend formula the main scoring loop uses for cuisine_affinity_score
+    (0.75 behavioral + 0.25 region prior, region-only fallback, 0.3 default)
+    — kept identical on purpose so retrieval and ranking agree on what
+    "relevant" means instead of being two different worldviews.
+    """
+    region_affinity = REGION_CUISINE_AFFINITY.get(region, {}).get(cuisine, 0.0)
+    behavioral = cuisine_affinity.get(cuisine)
+    if behavioral is not None:
+        return round(0.75 * behavioral + 0.25 * region_affinity, 3)
+    return region_affinity if region_affinity else 0.3
+
+
+def generate_candidates(
+    dishes: list,
+    region: str | None,
+    cuisine_affinity: dict,
+    max_candidates: int = MAX_CANDIDATES_PER_REQUEST,
+) -> list:
+    """
+    Narrows an already hard-filtered dish pool (post occasion/dietary
+    filters) down to a bounded candidate set using a proportional,
+    multi-bucket retrieval: bucket dishes by cuisine_type, score each
+    bucket once via the same affinity blend the ranker trusts, then fill
+    the candidate budget proportionally to that score — NOT a hard
+    top-cuisines-only cutoff, which would starve low-affinity cuisines
+    entirely and kill discovery/diversity before the ranker even runs.
+
+    Every cuisine bucket present in the pool gets at least
+    MIN_CANDIDATES_PER_CUISINE slots (or its full size, if smaller) before
+    proportional fill uses the rest of the budget — this is what keeps a
+    user's dominant cuisine from crowding out everything else the way a
+    plain `ORDER BY affinity_score LIMIT n` would.
+
+    No-op (returns the pool unchanged) if it's already <= max_candidates —
+    this stage exists to bound cost at scale, not to shrink small pools
+    for no reason.
+    """
+    if len(dishes) <= max_candidates:
+        return dishes
+
+    buckets: dict[str, list] = {}
+    for d in dishes:
+        buckets.setdefault(d.get("cuisine_type", "north_indian"), []).append(d)
+
+    scores = {c: _cuisine_affinity_score(c, region, cuisine_affinity) for c in buckets}
+    ranked_cuisines = sorted(buckets, key=lambda c: scores[c], reverse=True)
+
+    # Shuffle within each bucket so repeated requests in the same session
+    # don't always surface the same subset of a cuisine — real per-dish
+    # variety, not just cross-cuisine variety.
+    for c in ranked_cuisines:
+        random.shuffle(buckets[c])
+
+    selected = []
+    remaining_budget = max_candidates
+
+    # Pass 1: guaranteed floor per cuisine (protects low-affinity cuisines
+    # from being fully excluded).
+    floor_taken = {}
+    for c in ranked_cuisines:
+        take = min(MIN_CANDIDATES_PER_CUISINE, len(buckets[c]), remaining_budget)
+        floor_taken[c] = take
+        selected.extend(buckets[c][:take])
+        remaining_budget -= take
+        if remaining_budget <= 0:
+            break
+
+    # Pass 2: proportional fill of whatever budget remains, weighted by
+    # each cuisine's affinity score — this is what actually concentrates
+    # the pool toward what the user likes, on top of the floor from pass 1.
+    if remaining_budget > 0:
+        total_score = sum(max(scores[c], 0.05) for c in ranked_cuisines) or 1.0
+        for c in ranked_cuisines:
+            if remaining_budget <= 0:
+                break
+            leftover = buckets[c][floor_taken.get(c, 0):]
+            if not leftover:
+                continue
+            quota = max(0, round(max_candidates * (max(scores[c], 0.05) / total_score)))
+            take = min(quota, len(leftover), remaining_budget)
+            selected.extend(leftover[:take])
+            remaining_budget -= take
+
+    return selected[:max_candidates]
+
 
 def get_recommendations(
     user: dict,
@@ -545,6 +667,7 @@ def get_recommendations(
     food_graph: dict,
     n: int = 10,
     occasion_explicit: bool = False,
+    recently_shown: set | None = None,
 ) -> list:
     """
     Main recommendation function with ensemble scoring + cold-start blend.
@@ -590,44 +713,72 @@ def get_recommendations(
     candidates = filter_by_occasion(candidates, occasion, strict=occasion_explicit)
     candidates = filter_by_dietary(candidates, restrictions, is_veg)
 
-    # Build cold-start feature vector once if we need it (same for all dishes)
-    cold_start_cuisine_probs = None
+    # Candidate generation (retrieval stage) — narrows the hard-filtered
+    # pool to a bounded, affinity-weighted set BEFORE the expensive
+    # ensemble ranker runs on it. Previously every request ran full model
+    # inference over the entire filtered pool regardless of its size.
+    candidates = generate_candidates(candidates, user.get("region"), cuisine_affinity)
+
+    # Build cold-start raw feature map once if we need it (same for all dishes)
+    # FIX: previously built a hardcoded 32-value vector unrelated to
+    # COLD_START_FEATURES (injected region/hour/day_of_week/month/etc, none
+    # of which the cold-start models were trained on, and was missing
+    # health_literacy/habit_strength/religion/gender/birthplace_state/
+    # is_jain/is_halal/observance_level entirely). Build a name-keyed dict
+    # matching the real training schema instead, and let model_store order
+    # it per-model from each model's own saved feature_cols.
+    predicted_cuisine = None
     if use_cold_start:
         try:
-            cold_features = np.array([[
-                float(user.get("age", 28)),
-                float(user.get("bmi", 23.0)),
-                float(1 if user.get("is_vegetarian") else 0),
-                float(1 if user.get("is_wfh") else 0),
-                _label_encode(user.get("income_tier") or "unknown", _INCOME_CLASSES),
-                _label_encode(user.get("region") or "unknown", _REGION_CLASSES),
-                _label_encode(user.get("occupation") or "unknown", _OCCUPATION_CLASSES),
-                _label_encode(user.get("living_situation") or "unknown", _LIVING_SITUATION_CLASSES),
-                int("type2_diabetes" in conditions),
-                int("prediabetes" in conditions),
-                int("hypertension" in conditions),
-                int("obesity" in conditions),
-                int("pcos" in conditions),
-                int("high_cholesterol" in conditions),
-                float(context.get("hour", 12)),
-                float(context.get("day_of_week", 0)),
-                float(context.get("month", 1)),
-                float(1 if context.get("is_weekend") else 0),
-                _label_encode(context.get("season", "summer"), _SEASON_CLASSES),
-                float(total_meals),
-                0.0, 0.0, 0.0, 0.0,  # behavioral features — unavailable for cold-start users
-                0.0, 0.0, 0.0, 0.0,
-                0.0, 0.0, 0.0, 0.0,
-                0.0, 0.0,
-            ]], dtype=np.float32)
+            restr_list = [r.strip() for r in (user.get("dietary_restrictions") or "").split("|") if r.strip()] \
+                         if isinstance(user.get("dietary_restrictions"), str) else (user.get("dietary_restrictions") or [])
 
-            cold_cuisine_idx, cold_breakdown = model_store.ensemble_cold_start_predict(cold_features)
-            # Map cuisine class index to cuisine name using KNN's y_classes
-            # (saved in checkpoint metadata)
-            knn_model = model_store.cold_start_models.get("knn")
-            if knn_model is not None and cold_cuisine_idx is not None:
-                cold_start_cuisine_probs = cold_breakdown
-                log.debug(f"cold_start predicted cuisine idx={cold_cuisine_idx}, "
+            cold_raw = {
+                # numerical
+                "age":                    float(user.get("age", 28)),
+                "health_literacy":        float(user.get("health_literacy", 0.5)),
+                "habit_strength":         float(user.get("habit_strength", 0.3)),
+                "bmi":                    float(user.get("bmi", 23.0)),
+                "observance_level":       0.0,  # no religious-observance signal collected yet
+                "order_frequency_weekly": 0.0,  # no real order-frequency tracking yet
+                # categorical (label-encoded)
+                "birthplace_state": _label_encode("unknown", []),  # not collected at profile level yet
+                "current_state":    _label_encode(user.get("region") or "unknown", _REGION_CLASSES),
+                "religion":         _label_encode("unknown", []),  # not collected — see dietary flags below for halal/jain proxies
+                "gender":           _label_encode("unknown", []),  # not collected
+                "occupation":       _label_encode(user.get("occupation") or "unknown", _OCCUPATION_CLASSES),
+                "income_tier":      _label_encode(user.get("income_tier") or "unknown", _INCOME_CLASSES),
+                "living_situation": _label_encode(user.get("living_situation") or "unknown", _LIVING_SITUATION_CLASSES),
+                "activity_level":   _label_encode(user.get("activity_level") or "unknown", _ACTIVITY_CLASSES),
+                # binary
+                "is_vegetarian": float(1 if user.get("is_vegetarian") else 0),
+                "is_jain":       float(1 if "jain" in restr_list else 0),
+                "is_halal":      float(1 if "halal" in restr_list else 0),
+                # condition flags (multi_hot "conditions" expanded)
+                "has_diabetes":         float(int("type2_diabetes" in conditions)),
+                "has_prediabetes":      float(int("prediabetes" in conditions)),
+                "has_hypertension":     float(int("hypertension" in conditions)),
+                "has_obesity":          float(int("obesity" in conditions)),
+                "has_pcos":             float(int("pcos" in conditions)),
+                "has_high_cholesterol": float(int("high_cholesterol" in conditions)),
+                "has_thyroid":          float(int("thyroid" in conditions)),
+                "has_ibs":              float(int("ibs" in conditions)),
+                "has_anemia":           float(int("anemia" in conditions)),
+                # dietary_restrictions (multi_hot expanded, matches
+                # ml-training/cold_start's restr_<flag> naming)
+                "restr_vegetarian": float(1 if "vegetarian" in restr_list else 0),
+                "restr_low_gi":     float(1 if "low_gi" in restr_list else 0),
+                "restr_low_sodium": float(1 if "low_sodium" in restr_list else 0),
+                "restr_no_dairy":   float(1 if "no_dairy" in restr_list else 0),
+                "restr_no_gluten":  float(1 if "no_gluten" in restr_list else 0),
+                "restr_halal":      float(1 if "halal" in restr_list else 0),
+                "restr_jain":       float(1 if "jain" in restr_list else 0),
+                "restr_no_beef":    float(1 if "no_beef" in restr_list else 0),
+            }
+
+            predicted_cuisine, cold_breakdown = model_store.ensemble_cold_start_predict(cold_raw)
+            if predicted_cuisine:
+                log.debug(f"cold_start predicted cuisine={predicted_cuisine}, "
                           f"blend_weight={blend_weight:.2f}")
         except Exception as e:
             log.debug(f"Cold-start feature build failed: {e}")
@@ -636,16 +787,11 @@ def get_recommendations(
     for rank, dish in enumerate(candidates):
         cuisine = dish.get("cuisine_type", "north_indian")
 
-        # Region-behavioral cuisine affinity blend
+        # Region-behavioral cuisine affinity blend — same helper
+        # generate_candidates() used for retrieval, kept identical so
+        # retrieval and ranking never disagree on what "relevant" means.
         region = user.get("region")
-        region_affinity = REGION_CUISINE_AFFINITY.get(region, {}).get(cuisine, 0.0)
-        behavioral_affinity = cuisine_affinity.get(cuisine)
-        if behavioral_affinity is not None:
-            user["cuisine_affinity_score"] = round(
-                0.75 * behavioral_affinity + 0.25 * region_affinity, 3
-            )
-        else:
-            user["cuisine_affinity_score"] = region_affinity if region_affinity else 0.3
+        user["cuisine_affinity_score"] = _cuisine_affinity_score(cuisine, region, cuisine_affinity)
 
         # Health ensemble — computed first, feeds into ranker feature vector
         health_info = health_score_dish(user, dish, context)
@@ -671,19 +817,31 @@ def get_recommendations(
         ensemble_score, ranker_breakdown = score_dish(user, dish, context, rank)
 
         # Cold-start blend
-        if use_cold_start and cold_start_cuisine_probs is not None:
-            # Cold-start signal: cuisine affinity score from the ensemble
-            # cold-start predictor, used as a per-dish signal by checking
-            # whether this dish's cuisine aligns with the predicted preference.
-            # Simple proxy: if region_affinity is nonzero, cold-start agrees
-            # with regional priors. Blend linearly by meal count.
-            cold_signal = user.get("cuisine_affinity_score", 0.3)
+        if use_cold_start and predicted_cuisine is not None:
+            # FIX: the ensemble cold-start prediction (KNN + MLP) was computed
+            # every request but never read — cold_signal reused the region
+            # prior instead, so the trained cold-start models had zero actual
+            # effect on ranking. Now: dishes matching the model's predicted
+            # cuisine get a real boost; others fall back to the region prior
+            # so the signal still degrades gracefully off-prediction.
+            if cuisine == predicted_cuisine:
+                cold_signal = max(0.8, user.get("cuisine_affinity_score", 0.3))
+            else:
+                cold_signal = user.get("cuisine_affinity_score", 0.3)
             blended_score = (1 - blend_weight) * cold_signal + blend_weight * ensemble_score
         else:
             blended_score = ensemble_score
 
         boost = reorder_boost(user, dish, food_graph or {})
         final_score = round(blended_score + boost, 4)
+
+        # Anti-repeat: dishes shown to this user very recently (tracked via
+        # Redis by the router) get a mild penalty rather than being
+        # excluded outright — keeps the same dish from dominating every
+        # single request in a session while still allowing a genuine repeat
+        # favorite to surface if nothing else scores close to it.
+        if recently_shown and dish.get("dish_name") in recently_shown:
+            final_score = round(final_score * 0.85, 4)
 
         scored.append({
             "dish_name":         dish.get("dish_name"),
