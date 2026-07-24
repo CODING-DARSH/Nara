@@ -1,79 +1,53 @@
-// NARA — Recommendations Page (FIXED)
-// FIX 1: occasion tabs now actually change results (dish-level tagging
-//        in backend, no more cuisine-level guessing).
-// FIX 2: restaurants are now fetched and shown — calls
-//        recommendations.getWithRestaurants() instead of plain get(),
-//        and renders nearby_restaurants under each dish card.
+// NARA — Recommendations (redesigned)
+// Restaurant cards are now the primary view. Each card shows:
+//   - Name, area, rating, distance, delivery time
+//   - 2-3 top dish chips from that restaurant's real menu
+//   - Tap anywhere on the card → RestaurantDetail page (ranked full menu)
+//
+// Dish-only mode activates when location is unavailable — falls back to
+// the standard recommendation list, no restaurant matching.
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { recommendations } from "../services/api";
 import { useFoodGraphVersion } from "../context/AppContext";
 
 const OCCASIONS = [
-  { id: null,        label: "For You" },
+  { id: null,        label: "For You"   },
   { id: "breakfast", label: "Breakfast" },
-  { id: "lunch",     label: "Lunch" },
-  { id: "snack",     label: "Snack" },
-  { id: "dinner",    label: "Dinner" },
+  { id: "lunch",     label: "Lunch"     },
+  { id: "snack",     label: "Snack"     },
+  { id: "dinner",    label: "Dinner"    },
 ];
 
-function NutritionPill({ label, value, color }) {
-  if (!value) return null;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
-      <span style={{ fontSize: "13px", fontWeight: 600, color }}>{Math.round(value)}</span>
-      <span style={{ fontSize: "10px", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
-    </div>
-  );
-}
+const CUISINE_EMOJI = {
+  south_indian: "🥘", north_indian: "🍛", biryani: "🍚",
+  street_food: "🌮",  gujarati: "🫓",     maharashtrian: "🥙",
+  bengali: "🐟",      rajasthani: "🫕",   dessert: "🍮",
+  beverage: "☕",     staple: "🍽",       goan: "🍤",
+};
 
-function RestaurantRow({ r }) {
-  return (
-    <div
-      style={{
-        display:       "flex",
-        justifyContent:"space-between",
-        alignItems:    "center",
-        padding:       "10px 12px",
-        background:    "var(--surface-2)",
-        borderRadius:  "var(--radius-sm)",
-        marginBottom:  "6px",
-      }}
-    >
-      <div style={{ minWidth: 0 }}>
-        <div className="truncate" style={{ fontSize: "13px", fontWeight: 600 }}>{r.name}</div>
-        <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-          {r.area} · {r.distance_km} km
-          {r.avg_cost_for_two ? ` · ₹${r.avg_cost_for_two} for two` : ""}
-        </div>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-        {r.rating && (
-          <span style={{ fontSize: "11px", color: "var(--yellow)", fontWeight: 600 }}>★ {r.rating}</span>
-        )}
-        {r.delivery_enabled && (
-          <span className="badge badge-blue" style={{ fontSize: "9px" }}>delivery</span>
-        )}
-      </div>
-    </div>
-  );
-}
+function cuisineEmoji(c) { return CUISINE_EMOJI[c] || "🍽"; }
 
-function RecCard({ rec, index }) {
-  const [expanded, setExpanded] = useState(false);
-  const n = rec.nutrition || {};
-  const restaurants = rec.nearby_restaurants || [];
+// ── Restaurant card ────────────────────────────────────────────
+function RestaurantCard({ restaurant, topDishes, index, onClick }) {
+  const cuisines = Array.isArray(restaurant.cuisine_types)
+    ? restaurant.cuisine_types
+    : Object.keys(restaurant.cuisine_types || {});
+
+  // Up to 3 dish chips visible on the card without tapping
+  const chips = topDishes.slice(0, 3);
 
   return (
     <div
-      onClick={() => setExpanded(!expanded)}
+      onClick={onClick}
       style={{
         background:   "var(--surface)",
         border:       "1px solid var(--border)",
         borderRadius: "var(--radius-lg)",
-        padding:      "20px",
+        padding:      "18px",
         cursor:       "pointer",
-        transition:   "border-color 0.2s, transform 0.2s",
-        animation:    `fadeUp 0.3s ease ${index * 0.04}s both`,
+        animation:    `fadeUp 0.3s ease ${index * 0.05}s both`,
+        transition:   "border-color 0.2s, transform 0.15s",
       }}
       onMouseEnter={e => {
         e.currentTarget.style.borderColor = "var(--border-light)";
@@ -84,165 +58,235 @@ function RecCard({ rec, index }) {
         e.currentTarget.style.transform   = "translateY(0)";
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: "16px", fontWeight: 600, marginBottom: "4px", textTransform: "capitalize" }}>
-            {rec.dish_name?.replace(/_/g, " ")}
+      {/* Header row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: "16px", fontWeight: 700, marginBottom: "3px", textTransform: "capitalize" }}>
+            {restaurant.name}
           </div>
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            {rec.cuisine_type && (
-              <span className="badge badge-purple" style={{ fontSize: "9px" }}>{rec.cuisine_type.replace(/_/g, " ")}</span>
-            )}
-            {rec.is_veg && <span className="badge badge-green" style={{ fontSize: "9px" }}>veg</span>}
-            {rec.health_compliant ? (
-              <span className="badge badge-green" style={{ fontSize: "9px" }}>✓ healthy</span>
-            ) : (
-              <span className="badge badge-yellow" style={{ fontSize: "9px" }}>⚠ moderate</span>
-            )}
-            {restaurants.length > 0 && (
-              <span className="badge badge-blue" style={{ fontSize: "9px" }}>{restaurants.length} nearby</span>
-            )}
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+            {restaurant.area}
+            {restaurant.distance_km != null ? ` · ${restaurant.distance_km} km` : ""}
+            {restaurant.avg_cost_for_two ? ` · ₹${restaurant.avg_cost_for_two} for two` : ""}
           </div>
         </div>
-
-        <div
-          style={{
-            width: "44px", height: "44px", borderRadius: "50%",
-            background: `conic-gradient(var(--green) ${rec.score * 360}deg, var(--border) 0deg)`,
-            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-          }}
-        >
-          <div style={{ width: "34px", height: "34px", borderRadius: "50%", background: "var(--surface)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700 }}>
-            {Math.round(rec.score * 100)}
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px", flexShrink: 0, marginLeft: "12px" }}>
+          {restaurant.rating && (
+            <span style={{ fontSize: "12px", color: "var(--yellow)", fontWeight: 700 }}>
+              ★ {restaurant.rating}
+            </span>
+          )}
+          {restaurant.delivery_enabled && (
+            <span className="badge badge-blue" style={{ fontSize: "9px" }}>
+              {restaurant.delivery_time_min ? `${restaurant.delivery_time_min} min` : "delivery"}
+            </span>
+          )}
         </div>
       </div>
 
-      <div
-        style={{
-          display: "flex", justifyContent: "space-around", padding: "12px 0",
-          borderTop: "1px solid var(--border)",
-          borderBottom: expanded ? "1px solid var(--border)" : "none",
-          marginBottom: expanded ? "12px" : 0,
-        }}
-      >
-        <NutritionPill label="kcal"    value={n.calories}  color="var(--blue)" />
-        <NutritionPill label="protein" value={n.protein_g} color="var(--green)" />
-        <NutritionPill label="carbs"   value={n.carbs_g}   color="var(--yellow)" />
-        <NutritionPill label="fat"     value={n.fat_g}     color="var(--orange)" />
-        {n.gi && <NutritionPill label="GI" value={n.gi} color={n.gi > 70 ? "var(--red)" : n.gi > 55 ? "var(--yellow)" : "var(--green)"} />}
-      </div>
+      {/* Cuisine tags */}
+      {cuisines.length > 0 && (
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "12px" }}>
+          {cuisines.slice(0, 3).map(c => (
+            <span key={c} className="badge badge-purple" style={{ fontSize: "9px" }}>
+              {cuisineEmoji(c)} {c.replace(/_/g, " ")}
+            </span>
+          ))}
+        </div>
+      )}
 
-      {expanded && (
-        <>
-          {rec.health_reasons?.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: restaurants.length ? "16px" : 0 }}>
-              {rec.health_reasons.map((r, i) => (
-                <div key={i} style={{ fontSize: "12px", color: "var(--yellow)", display: "flex", gap: "6px", alignItems: "flex-start" }}>
-                  <span>⚠</span><span>{r}</span>
-                </div>
-              ))}
+      {/* Dish chips — the key difference from the old design:
+          you can see what this restaurant serves without tapping in */}
+      {chips.length > 0 && (
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          {chips.map((dish, i) => (
+            <div
+              key={i}
+              style={{
+                padding:      "5px 10px",
+                borderRadius: "100px",
+                background:   "var(--surface-2)",
+                border:       "1px solid var(--border)",
+                fontSize:     "11px",
+                color:        "var(--text-secondary)",
+                textTransform:"capitalize",
+                display:      "flex",
+                alignItems:   "center",
+                gap:          "4px",
+              }}
+            >
+              {cuisineEmoji(dish.cuisine_type)}
+              {dish.dish_name?.replace(/_/g, " ")}
+              {dish.price && (
+                <span style={{ color: "var(--text-tertiary)" }}>· ₹{Math.round(dish.price)}</span>
+              )}
+              {dish.health_compliant && (
+                <span style={{ color: "var(--green)", fontSize: "9px" }}>✓</span>
+              )}
+            </div>
+          ))}
+          {topDishes.length > 3 && (
+            <div style={{
+              padding: "5px 10px", borderRadius: "100px",
+              background: "var(--surface-2)", border: "1px solid var(--border)",
+              fontSize: "11px", color: "var(--text-secondary)",
+            }}>
+              +{topDishes.length - 3} more →
             </div>
           )}
-
-          {/* FIX 2: restaurant data now actually rendered */}
-          {restaurants.length > 0 ? (
-            <div>
-              <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "8px" }}>
-                Order nearby
-              </div>
-              {restaurants.map((r, i) => <RestaurantRow key={r.id || i} r={r} />)}
-            </div>
-          ) : (
-            <div style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>
-              No nearby restaurants found for this cuisine within range.
-            </div>
-          )}
-        </>
+        </div>
       )}
     </div>
   );
 }
 
+// ── Dish-only card (when no location available) ────────────────
+function DishCard({ rec, index }) {
+  const n = rec.nutrition || {};
+  return (
+    <div
+      style={{
+        background:   "var(--surface)",
+        border:       "1px solid var(--border)",
+        borderRadius: "var(--radius-lg)",
+        padding:      "16px",
+        animation:    `fadeUp 0.3s ease ${index * 0.04}s both`,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+        <div>
+          <div style={{ fontSize: "15px", fontWeight: 600, textTransform: "capitalize", marginBottom: "3px" }}>
+            {cuisineEmoji(rec.cuisine_type)} {rec.dish_name?.replace(/_/g, " ")}
+          </div>
+          <div style={{ display: "flex", gap: "6px" }}>
+            {rec.is_veg && <span className="badge badge-green" style={{ fontSize: "9px" }}>veg</span>}
+            {rec.health_compliant
+              ? <span className="badge badge-green" style={{ fontSize: "9px" }}>✓ healthy</span>
+              : <span className="badge badge-yellow" style={{ fontSize: "9px" }}>⚠ moderate</span>
+            }
+          </div>
+        </div>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)", textAlign: "right" }}>
+          {n.calories && <div>{Math.round(n.calories)} kcal</div>}
+          {n.protein_g && <div>{Math.round(n.protein_g)}g protein</div>}
+        </div>
+      </div>
+      {rec.health_reasons?.length > 0 && rec.health_reasons.map((r, i) => (
+        <div key={i} style={{ fontSize: "11px", color: "var(--yellow)", marginTop: "4px" }}>⚠ {r}</div>
+      ))}
+    </div>
+  );
+}
+
+// Default fallback location — used whenever real geolocation isn't available
+// (denied, unsupported, or timed out). This is where the seeded restaurant
+// data actually lives right now, so falling back to `null` meant the
+// restaurant view could never render for anyone who didn't grant location
+// access. Swap this for a smarter default (user's saved city, IP-based geo,
+// etc.) once that's wired up — for now it just needs to point at real data.
+const DEFAULT_LOCATION = { lat: 12.9716, lng: 77.5946 }; // Bengaluru
+
+// ── Main page ──────────────────────────────────────────────────
 export default function Recommendations() {
+  const navigate     = useNavigate();
   const graphVersion = useFoodGraphVersion();
   const [occasion,  setOccasion]  = useState(null);
-  const [recs,      setRecs]      = useState([]);
+  const [data,      setData]      = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [location,  setLocation]  = useState(null);
-  const [locError,  setLocError]  = useState(false);
+  const [locState,  setLocState]  = useState("pending"); // pending | ok | fallback
 
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        ()  => setLocError(true),
-        { timeout: 5000 }
-      );
-    } else {
-      setLocError(true);
+    if (!navigator.geolocation) {
+      setLocation(DEFAULT_LOCATION);
+      setLocState("fallback");
+      return;
     }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setLocState("ok");
+      },
+      () => {
+        // Denied or errored — still show restaurants, just using the
+        // default location instead of the user's real one.
+        setLocation(DEFAULT_LOCATION);
+        setLocState("fallback");
+      },
+      { timeout: 6000 }
+    );
   }, []);
 
-  // FIX 4: also refreshes when a meal is logged elsewhere in the app.
   useEffect(() => {
+    if (locState === "pending") return;
     let cancelled = false;
     async function load() {
       setLoading(true);
       try {
-        let data;
-        if (location) {
-          // FIX 2: with-restaurants endpoint requires lat/lng — use it
-          // whenever we have a location fix.
-          data = await recommendations.getWithRestaurants(
-            location.lat, location.lng, occasion, 15
-          );
-        } else {
-          data = await recommendations.get(null, null, occasion, 15);
-        }
-        if (!cancelled) setRecs(data?.recommendations || []);
+        // location is now always set (real or Bengaluru fallback) by the
+        // time locState leaves "pending", so this always requests the
+        // restaurant-aware endpoint.
+        const result = await recommendations.getWithRestaurants(
+          location.lat, location.lng, occasion, 20
+        );
+        if (!cancelled) setData(result);
       } catch {
-        if (!cancelled) setRecs([]);
+        if (!cancelled) setData(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [occasion, location, graphVersion]);
+  }, [occasion, location, locState, graphVersion]);
+
+  // Build restaurant view from the with-restaurants response.
+  // Each rec can carry nearby_restaurants; we invert this to a
+  // restaurant-primary list, with the top dishes per restaurant.
+  const restaurantMap = {};
+  (data?.recommendations || []).forEach(rec => {
+    (rec.nearby_restaurants || []).forEach(r => {
+      if (!restaurantMap[r.id]) {
+        restaurantMap[r.id] = { restaurant: r, dishes: [] };
+      }
+      if (restaurantMap[r.id].dishes.length < 6) {
+        restaurantMap[r.id].dishes.push(rec);
+      }
+    });
+  });
+  const restaurantList = Object.values(restaurantMap);
+  const dishOnly = restaurantList.length === 0;
 
   return (
     <div className="page">
-      <div style={{ padding: "56px 24px 20px" }}>
-        <h1 style={{ fontSize: "28px", fontWeight: "800", letterSpacing: "-0.03em", marginBottom: "6px" }}>
+      {/* Header */}
+      <div style={{ padding: "56px 24px 16px" }}>
+        <h1 style={{ fontSize: "28px", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "6px" }}>
           Discover
         </h1>
-        {location ? (
-          <div style={{ fontSize: "12px", color: "var(--green)", display: "flex", alignItems: "center", gap: "4px" }}>
-            <span>📍</span> Location enabled — showing nearby restaurants
-          </div>
-        ) : locError ? (
-          <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-            Enable location to see nearby restaurants
-          </div>
-        ) : (
-          <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Getting your location...</div>
-        )}
+        <div style={{ fontSize: "12px", color: locState === "ok" ? "var(--green)" : "var(--text-secondary)" }}>
+          {locState === "pending"  && "Getting your location..."}
+          {locState === "ok"       && "📍 Showing restaurants near you"}
+          {locState === "fallback" && "📍 Showing restaurants in Bengaluru — enable location for results near you"}
+        </div>
       </div>
 
-      {/* FIX 1: tabs now genuinely change results (dish-level filtering) */}
-      <div style={{ display: "flex", gap: "8px", padding: "0 24px", overflowX: "auto", marginBottom: "24px", paddingBottom: "4px" }}>
+      {/* Occasion tabs */}
+      <div style={{ display: "flex", gap: "8px", padding: "0 24px", overflowX: "auto", marginBottom: "20px", paddingBottom: "4px" }}>
         {OCCASIONS.map(o => (
           <button
             key={o.label}
             onClick={() => setOccasion(o.id)}
             style={{
-              padding: "8px 18px", borderRadius: "100px",
+              padding:    "8px 18px",
+              borderRadius: "100px",
               background: occasion === o.id ? "var(--text-primary)" : "var(--surface)",
-              color: occasion === o.id ? "var(--bg)" : "var(--text-secondary)",
-              border: `1px solid ${occasion === o.id ? "var(--text-primary)" : "var(--border)"}`,
-              fontSize: "13px", fontWeight: occasion === o.id ? 600 : 400,
-              whiteSpace: "nowrap", transition: "all 0.2s",
+              color:      occasion === o.id ? "var(--bg)" : "var(--text-secondary)",
+              border:     `1px solid ${occasion === o.id ? "var(--text-primary)" : "var(--border)"}`,
+              fontSize:   "13px",
+              fontWeight: occasion === o.id ? 600 : 400,
+              whiteSpace: "nowrap",
+              transition: "all 0.2s",
             }}
           >
             {o.label}
@@ -250,19 +294,46 @@ export default function Recommendations() {
         ))}
       </div>
 
+      {/* Content */}
       <div style={{ padding: "0 24px", display: "flex", flexDirection: "column", gap: "12px" }}>
         {loading ? (
-          Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="card" style={{ height: "120px", animation: "pulse 1.5s ease infinite" }} />
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="card" style={{ height: "140px", animation: "pulse 1.5s ease infinite" }} />
           ))
-        ) : recs.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "60px 0", color: "var(--text-secondary)" }}>
-            <div style={{ fontSize: "40px", marginBottom: "16px" }}>🍽</div>
-            <div style={{ fontSize: "16px", fontWeight: 500 }}>No recommendations yet</div>
-            <div style={{ fontSize: "13px", marginTop: "6px" }}>Log some meals first</div>
-          </div>
+        ) : dishOnly ? (
+          // No location or no restaurant matches — show plain dish list
+          (data?.recommendations || []).length === 0 ? (
+            <div style={{ textAlign: "center", padding: "60px 0", color: "var(--text-secondary)" }}>
+              <div style={{ fontSize: "40px", marginBottom: "16px" }}>🍽</div>
+              <div style={{ fontSize: "16px", fontWeight: 500 }}>No recommendations yet</div>
+              <div style={{ fontSize: "13px", marginTop: "6px" }}>Log some meals first</div>
+            </div>
+          ) : (
+            (data?.recommendations || []).map((rec, i) => (
+              <DishCard key={`${rec.dish_name}-${i}`} rec={rec} index={i} />
+            ))
+          )
         ) : (
-          recs.map((rec, i) => <RecCard key={`${rec.dish_name}-${i}`} rec={rec} index={i} />)
+          // Restaurant-first view
+          restaurantList.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "60px 0", color: "var(--text-secondary)" }}>
+              <div style={{ fontSize: "40px", marginBottom: "16px" }}>📍</div>
+              <div style={{ fontSize: "16px", fontWeight: 500 }}>No restaurants nearby</div>
+              <div style={{ fontSize: "13px", marginTop: "6px" }}>Try expanding your range</div>
+            </div>
+          ) : (
+            restaurantList.map(({ restaurant, dishes }, i) => (
+              <RestaurantCard
+                key={restaurant.id}
+                restaurant={restaurant}
+                topDishes={dishes}
+                index={i}
+                onClick={() => navigate(`/restaurant/${restaurant.id}`, {
+                  state: { restaurant }
+                })}
+              />
+            ))
+          )
         )}
       </div>
     </div>

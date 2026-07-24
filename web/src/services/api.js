@@ -73,10 +73,6 @@ export const user = {
   getFoodGraph: () =>
     request(`${BASE.userIntel}/v1/food-graph`, { headers: authHeaders() }),
 
-  // FIX 3: safety-net synchronous recompute, called right after a meal
-  // log so the next getFoodGraph() call is guaranteed fresh instead of
-  // racing the async Kafka enrichment pipeline. Requires
-  // food_graph_recompute.py wired into user-intelligence service.
   recomputeFoodGraph: () =>
     request(`${BASE.userIntel}/v1/food-graph/recompute`, {
       method: "POST",
@@ -114,8 +110,6 @@ export const meals = {
 
 // ── Recommendations ────────────────────────────────────────────
 export const recommendations = {
-  // FIX 2: occasion is now sent and the backend treats it as STRICT
-  // filtering when present, so the UI tabs actually change results.
   get: (lat, lng, occasion, n = 10) => {
     const params = new URLSearchParams({ n });
     if (lat != null) params.append("lat", lat);
@@ -126,18 +120,10 @@ export const recommendations = {
     });
   },
 
-  // FIX 5: combined dish + nearby restaurant recommendations
   getWithRestaurants: (lat, lng, occasion, n = 10, radiusKm = 5) => {
     const params = new URLSearchParams({ n, radius_km: radiusKm, lat, lng });
     if (occasion) params.append("occasion", occasion);
     return request(`${BASE.recommendation}/v1/recommend/with-restaurants?${params}`, {
-      headers: authHeaders(),
-    });
-  },
-
-  coldStart: (profile) => {
-    const params = new URLSearchParams(profile);
-    return request(`${BASE.recommendation}/v1/recommend/cold-start?${params}`, {
       headers: authHeaders(),
     });
   },
@@ -149,6 +135,22 @@ export const recommendations = {
       headers: authHeaders(),
     });
   },
+};
+
+// ── Restaurants ────────────────────────────────────────────────
+export const restaurants = {
+  // GET /v1/recommend/restaurants/{id} — restaurant details + full ranked
+  // menu from restaurant_menu_items, each dish scored by the full ensemble
+  // pipeline with real price_match_score. This is what RestaurantDetail
+  // calls when you tap a restaurant card.
+  // FIX: this was missing the /recommend prefix segment that the actual
+  // router (recommend.py, APIRouter(prefix="/v1/recommend")) is mounted
+  // under — every request 404'd, which is why RestaurantDetail.jsx always
+  // showed "Couldn't load menu" no matter what.
+  getMenu: (restaurantId) =>
+    request(`${BASE.recommendation}/v1/recommend/restaurants/${restaurantId}`, {
+      headers: authHeaders(),
+    }),
 };
 
 // ── Conversation ───────────────────────────────────────────────
