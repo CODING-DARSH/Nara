@@ -6,7 +6,7 @@ with a synthetic (clearly labeled) restaurant<->dish assignment and price.
 Run inside the recommendation container, after applying
 migrations/001_restaurant_menu_items.sql:
 
-    docker compose exec recommendation-service python seed_restaurant_menus.py
+    docker compose exec recommendation-service python -m app.seed_restaurant_menus
 
 Assignment logic, per restaurant:
   - Each restaurant gets 12-20 menu items (random within that range).
