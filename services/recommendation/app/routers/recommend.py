@@ -29,6 +29,7 @@ from app.core.model_loader import model_store
 from app.core.redis import (
     get_cached_recommendations, set_cached_recommendations,
     get_recently_shown, record_shown_dishes, invalidate_recs_cache,
+    get_dish_interactions, record_dish_interaction,
 )
 from app.core.kafka import publish_feedback_event
 from app.pipeline.ranker import get_recommendations, set_dish_candidates
@@ -226,7 +227,8 @@ async def recommend(
     context = _build_context(now, lat, lng, occasion, profile)
     user    = _build_user(profile, user_id, food_graph)
 
-    recently_shown = await get_recently_shown(user_id)
+    recently_shown    = await get_recently_shown(user_id)
+    dish_interactions = await get_dish_interactions(user_id)
 
     # FIX 2: occasion_explicit=True whenever the caller passed an occasion
     # (i.e. the user tapped a specific tab in the UI) -> strict filtering,
@@ -235,6 +237,7 @@ async def recommend(
         user, context, food_graph, n=n,
         occasion_explicit=bool(occasion),
         recently_shown=recently_shown,
+        dish_interactions=dish_interactions,
     )
 
     response = {
@@ -287,9 +290,17 @@ async def submit_feedback(
     "what the user actually did with it" instead of that data disappearing
     on every request like it did before.
 
-    Consumed by user-intelligence/app/workers/feedback_update_worker.py,
-    which nudges FoodGraph.cuisine_affinity based on action — see that
-    file for the actual weighting.
+    Two things happen on click/order:
+      1. Published to Kafka -> consumed by
+         user-intelligence/app/workers/feedback_update_worker.py, which
+         nudges FoodGraph.cuisine_affinity (CATEGORY-level signal — "you
+         like Gujarati food more now").
+      2. Recorded directly in this service's own Redis
+         (core/redis.record_dish_interaction) -> read by reorder_boost()
+         (DISH-level signal — "you specifically keep ordering Khichadi").
+         This is synchronous and immediate, unlike (1) which depends on a
+         Kafka round-trip — a specific dish should reinforce itself on the
+         very next request, not wait on cross-service consumer lag.
     """
     if body.action not in ("skip", "click", "order"):
         from fastapi import HTTPException, status
@@ -308,9 +319,10 @@ async def submit_feedback(
         "rank":         body.rank,
     })
 
-    # An order/click is a real signal that should be reflected on the very
-    # next request, not up to RECS_CACHE_TTL_SECONDS later.
     if body.action in ("click", "order"):
+        await record_dish_interaction(user_id, body.dish_name, body.action)
+        # An order/click is a real signal that should be reflected on the
+        # very next request, not up to RECS_CACHE_TTL_SECONDS later.
         await invalidate_recs_cache(user_id)
 
     return {"status": "recorded"}
@@ -321,7 +333,6 @@ async def recommend_with_restaurants(
     lat: float                = Query(...),
     lng: float                 = Query(...),
     occasion: Optional[str]    = Query(None),
-    radius_km: float           = Query(5.0),
     n: int                     = Query(10, ge=1, le=20),
     current_user: dict         = Depends(get_current_user),
     credentials                 = Depends(bearer),
@@ -330,6 +341,12 @@ async def recommend_with_restaurants(
     FIX 5: Combines dish recommendations with real nearby restaurants
     (PostGIS) matched on cuisine_type — the only reliable join key we
     have since per-restaurant menu data doesn't exist yet.
+
+    No distance cutoff — this is a fixed seeded restaurant dataset, not a
+    live delivery-radius system, so an arbitrary km cutoff only created
+    artificial scarcity unrelated to actual cuisine-match quality.
+    Distance is still computed and used to sort (nearest cuisine match
+    first), just never used to exclude.
     """
     await ensure_dishes_loaded()
 
@@ -345,7 +362,7 @@ async def recommend_with_restaurants(
 
     # FIX: this endpoint used to fetch exactly `n` recommendations, match
     # each to nearby restaurants, and return whatever came back — but any
-    # dish whose cuisine has ZERO real restaurants within radius_km gets
+    # dish whose cuisine has ZERO real restaurants anywhere in the dataset gets
     # silently dropped by the frontend (it only builds a restaurant card
     # per dish that actually has nearby_restaurants). If a user's genuine
     # top-preference cuisine (e.g. gujarati) has little/no restaurant
@@ -364,12 +381,14 @@ async def recommend_with_restaurants(
     recommendations = []
     matched = []
     restaurants_by_cuisine = {}
+    dish_interactions = await get_dish_interactions(user_id)
 
     async with LocalSession() as db:
         for attempt in range(MAX_FETCH_MULTIPLIER):
             recommendations = get_recommendations(
                 user, context, food_graph, n=fetch_n,
                 occasion_explicit=bool(occasion),
+                dish_interactions=dish_interactions,
             )
             cuisines_needed = list({r["cuisine_type"] for r in recommendations
                                      if r.get("cuisine_type") and r["cuisine_type"] not in restaurants_by_cuisine})
@@ -388,15 +407,10 @@ async def recommend_with_restaurants(
                         WHERE
                             is_active = TRUE
                             AND cuisine_types ? :cuisine
-                            AND ST_DWithin(
-                                location::geography,
-                                ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
-                                :radius_m
-                            )
                         ORDER BY distance_km
                         LIMIT 5
                     """),
-                    {"lat": lat, "lng": lng, "radius_m": radius_km * 1000, "cuisine": cuisine},
+                    {"lat": lat, "lng": lng, "cuisine": cuisine},
                 )
                 rows = result.mappings().all()
                 restos = [dict(r) for r in rows]
@@ -481,7 +495,6 @@ async def cold_start_recommend(
 async def nearby_restaurants(
     lat: float              = Query(...),
     lng: float              = Query(...),
-    radius_km: float        = Query(5.0),
     cuisine: Optional[str]  = Query(None),
     current_user: dict      = Depends(get_current_user),
 ):
@@ -499,16 +512,11 @@ async def nearby_restaurants(
                 FROM restaurants
                 WHERE
                     is_active = TRUE
-                    AND ST_DWithin(
-                        location::geography,
-                        ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
-                        :radius_m
-                    )
                     {cuisine_filter}
                 ORDER BY distance_km
                 LIMIT 20
             """),
-            {"lat": lat, "lng": lng, "radius_m": radius_km * 1000, "cuisine": cuisine},
+            {"lat": lat, "lng": lng, "cuisine": cuisine},
         )
         rows = result.mappings().all()
         restaurants = [dict(r) for r in rows]
