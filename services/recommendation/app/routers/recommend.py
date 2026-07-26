@@ -13,6 +13,7 @@ Fixes applied:
 """
 import json
 import logging
+import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -32,6 +33,7 @@ from app.core.redis import (
     get_dish_interactions, record_dish_interaction,
 )
 from app.core.kafka import publish_feedback_event
+from app.core.events import log_event, log_events_bulk
 from app.pipeline.ranker import get_recommendations, set_dish_candidates
 from app.pipeline import ranker as ranker_module
 
@@ -251,6 +253,7 @@ async def recommend(
 
     await set_cached_recommendations(user_id, occasion, hour_bucket, response)
 
+    session_id   = str(uuid.uuid4())
     shown_dishes = [{"dish_name": r["dish_name"], "cuisine_type": r.get("cuisine_type")}
                     for r in recommendations if r.get("dish_name")]
     dish_names   = [d["dish_name"] for d in shown_dishes]
@@ -266,6 +269,25 @@ async def recommend(
         "dishes":      shown_dishes,
     })
 
+    # Durable raw event log — see core/events.py. This is what Kafka's
+    # impression event above couldn't be: permanent (not 7-day retention)
+    # and queryable later for offline evaluation, with rank/score captured
+    # AT THE MOMENT OF SHOWING rather than recomputed after the fact.
+    await log_events_bulk([
+        {
+            "user_id":     user_id,
+            "event_type":  "impression",
+            "dish_name":   r.get("dish_name"),
+            "cuisine_type": r.get("cuisine_type"),
+            "occasion":    context["occasion"],
+            "rank":        i,
+            "score":       r.get("score"),
+            "session_id":  session_id,
+        }
+        for i, r in enumerate(recommendations) if r.get("dish_name")
+    ])
+
+    response["session_id"] = session_id
     return response
 
 
@@ -276,6 +298,12 @@ class FeedbackIn(BaseModel):
     action: str            # "skip" | "click" | "order"
     occasion: Optional[str] = None
     rank: Optional[int]     = None  # position it was shown at, if known
+    session_id: Optional[str] = None  # ties this action back to the impression
+                                       # batch it came from, once the frontend
+                                       # round-trips the session_id returned by
+                                       # `/` — not wired on the frontend yet,
+                                       # accepted now so no API change is
+                                       # needed later.
 
 
 @router.post("/feedback")
@@ -324,6 +352,16 @@ async def submit_feedback(
         # An order/click is a real signal that should be reflected on the
         # very next request, not up to RECS_CACHE_TTL_SECONDS later.
         await invalidate_recs_cache(user_id)
+
+    await log_event(
+        user_id=user_id,
+        event_type=body.action,
+        dish_name=body.dish_name,
+        cuisine_type=body.cuisine_type,
+        occasion=body.occasion,
+        rank=body.rank,
+        session_id=body.session_id,
+    )
 
     return {"status": "recorded"}
 
@@ -436,12 +474,29 @@ async def recommend_with_restaurants(
     # matches, restricted to what's actually deliverable near you."
     recommendations = matched[:n]
 
+    session_id = str(uuid.uuid4())
+    await log_events_bulk([
+        {
+            "user_id":       user_id,
+            "event_type":    "impression",
+            "dish_name":     r.get("dish_name"),
+            "cuisine_type":  r.get("cuisine_type"),
+            "restaurant_id": (r.get("nearby_restaurants") or [{}])[0].get("id"),
+            "occasion":      context["occasion"],
+            "rank":          i,
+            "score":         r.get("score"),
+            "session_id":    session_id,
+        }
+        for i, r in enumerate(recommendations) if r.get("dish_name")
+    ])
+
     return {
         "user_id":         user_id,
         "occasion":        context["occasion"],
         "occasion_strict": bool(occasion),
         "count":           len(recommendations),
         "recommendations": recommendations,
+        "session_id":      session_id,
     }
 
 

@@ -76,6 +76,31 @@ def _load_sklearn(path: str):
     return payload
 
 
+def _load_sklearn_with_meta(path: str):
+    """
+    Load a joblib sklearn model AND its saved metadata (feature_cols,
+    classes, etc). Needed for reorder/cold-start where the exact
+    training-time feature order is only recoverable from metadata["features"]
+    — hardcoding a shared order per family was the bug that scrambled
+    reorder_boost() and the cold-start vector.
+    """
+    payload = joblib.load(path)
+    if isinstance(payload, dict) and "model" in payload:
+        return payload["model"], payload.get("metadata", {}) or {}
+    return payload, {}
+
+
+def _ordered_vector(raw: dict, feature_names: list) -> np.ndarray:
+    """
+    Build a feature vector in the EXACT order a model's own saved
+    feature_cols/metadata specifies, pulling values from a name-keyed
+    dict rather than a hardcoded positional list. Missing names default
+    to 0.0 (matches training-side .fillna(0)).
+    """
+    return np.array([[float(raw.get(name, 0.0) or 0.0) for name in feature_names]],
+                     dtype=np.float32)
+
+
 class EnsembleModelStore:
     """
     Loads every saved variant per model family.
@@ -192,28 +217,45 @@ class EnsembleModelStore:
             log.warning(f"  occasion/dt failed: {e}")
 
     def _load_reorder_models(self, d: str):
+        # FIX: reorder_boost() used to build a single hardcoded 14-value
+        # vector that didn't match either model's real training order
+        # (fields swapped, bmi/dish_rank injected that were never trained
+        # features). Each reorder_*.joblib was saved with
+        # metadata["features"] = the exact training column order — load
+        # and keep that so the vector can be built by name, per model.
         try:
             p = os.path.join(d, "reorder_rf.joblib")
             if os.path.exists(p):
-                self.reorder_models["rf"] = _load_sklearn(p)
-                log.info("  reorder/rf loaded")
+                model, meta = _load_sklearn_with_meta(p)
+                self.reorder_models["rf"] = {"model": model, "features": meta.get("features", [])}
+                log.info(f"  reorder/rf loaded ({len(meta.get('features', []))} features)")
         except Exception as e:
             log.warning(f"  reorder/rf failed: {e}")
 
         try:
             p = os.path.join(d, "reorder_logistic.joblib")
             if os.path.exists(p):
-                self.reorder_models["logistic"] = _load_sklearn(p)
-                log.info("  reorder/logistic loaded")
+                model, meta = _load_sklearn_with_meta(p)
+                self.reorder_models["logistic"] = {"model": model, "features": meta.get("features", [])}
+                log.info(f"  reorder/logistic loaded ({len(meta.get('features', []))} features)")
         except Exception as e:
             log.warning(f"  reorder/logistic failed: {e}")
 
     def _load_cold_start_models(self, d: str):
+        # Same issue as reorder: cold_start_knn.joblib carries
+        # metadata["features"] (exact training order) and metadata["classes"]
+        # (the real fitted class list) — load both instead of discarding
+        # metadata like the old _load_sklearn() did.
         try:
             p = os.path.join(d, "cold_start_knn.joblib")
             if os.path.exists(p):
-                self.cold_start_models["knn"] = _load_sklearn(p)
-                log.info("  cold_start/knn loaded")
+                model, meta = _load_sklearn_with_meta(p)
+                self.cold_start_models["knn"] = {
+                    "model": model,
+                    "features": meta.get("features", []),
+                    "classes": meta.get("classes") or list(getattr(model, "classes_", [])),
+                }
+                log.info(f"  cold_start/knn loaded ({len(meta.get('features', []))} features)")
         except Exception as e:
             log.warning(f"  cold_start/knn failed: {e}")
 
@@ -311,17 +353,27 @@ class EnsembleModelStore:
 
         return int(np.argmax(weighted_probs)), breakdown
 
-    def ensemble_reorder_score(self, features: np.ndarray) -> tuple[float, dict]:
+    def ensemble_reorder_score(self, raw_features: dict) -> tuple[float, dict]:
         """
         Combines reorder models using AUC-derived weights.
+        `raw_features` is a name-keyed dict (training column name -> value);
+        each model's own saved feature order (self.reorder_models[name]["features"])
+        is used to build its vector, so rf and logistic can each have their
+        own column order without either being wrong.
         Returns (reorder_probability, per_model_breakdown).
         Caller is responsible for skipping this entirely when no order history
         exists (food_graph.top_dishes empty) — don't call this with zero data.
         """
         scores = {}
-        for name, model in self.reorder_models.items():
+        for name, entry in self.reorder_models.items():
+            model         = entry["model"]
+            feature_names = entry["features"]
+            if not feature_names:
+                log.debug(f"ensemble reorder/{name} skipped — no saved feature order")
+                continue
             try:
-                probs = model.predict_proba(features.reshape(1, -1))[0]
+                vec = _ordered_vector(raw_features, feature_names)
+                probs = model.predict_proba(vec)[0]
                 scores[name] = float(probs[1]) if len(probs) > 1 else float(probs[0])
             except Exception as e:
                 log.debug(f"ensemble reorder/{name} failed: {e}")
@@ -333,27 +385,41 @@ class EnsembleModelStore:
         combined = sum(REORDER_WEIGHTS.get(n, 0.5) * s for n, s in scores.items()) / total_weight
         return round(combined, 4), scores
 
-    def ensemble_cold_start_predict(self, features: np.ndarray) -> tuple[int, dict]:
+    def ensemble_cold_start_predict(self, raw_features: dict) -> tuple[str | None, dict]:
         """
         Combines cold-start models (knn + mlp checkpoint) weighted by F1.
-        Returns (predicted_cuisine_class_index, per_model_breakdown).
+        `raw_features` is a name-keyed dict (training column name -> value) —
+        each model builds its own vector from its own saved feature order,
+        instead of both being forced through one hardcoded (and wrong) list.
+        Returns (predicted_cuisine_NAME, per_model_breakdown).
 
         MLP from the checkpoint: we reconstruct inference manually from the
         saved state_dict + architecture metadata since the MLP class isn't
         importable here (it's defined in ml-training/cold_start/train_mlp.py).
         Falls back to knn-only if MLP reconstruction fails.
+
+        FIX: previously looked for checkpoint["model_state_dict"] /
+        checkpoint["state_dict"], but train_mlp.py actually saves the key
+        as "model_state" — the lookup always missed, so the MLP silently
+        contributed nothing to the ensemble despite loading "successfully".
         """
         weighted_probs = None
         breakdown = {}
+        classes = None  # resolved from whichever model actually produced probs
 
         # KNN
-        knn = self.cold_start_models.get("knn")
-        if knn is not None:
+        knn_entry = self.cold_start_models.get("knn")
+        if isinstance(knn_entry, dict) and knn_entry.get("model") is not None:
+            knn = knn_entry["model"]
+            feature_names = knn_entry.get("features", [])
             try:
-                probs = knn.predict_proba(features.reshape(1, -1))[0]
+                vec = _ordered_vector(raw_features, feature_names) if feature_names \
+                      else np.array([[raw_features.get(k, 0.0) for k in raw_features]], dtype=np.float32)
+                probs = knn.predict_proba(vec)[0]
                 w = COLD_START_WEIGHTS.get("knn", 0.5)
                 breakdown["knn"] = probs.tolist()
                 weighted_probs = w * probs
+                classes = knn_entry.get("classes") or list(getattr(knn, "classes_", []))
             except Exception as e:
                 log.debug(f"cold_start/knn inference failed: {e}")
 
@@ -364,10 +430,14 @@ class EnsembleModelStore:
                 import torch
                 import torch.nn as nn
 
-                state_dict  = mlp_checkpoint.get("model_state_dict") or mlp_checkpoint.get("state_dict")
-                input_dim   = mlp_checkpoint.get("input_dim", features.shape[1])
+                state_dict  = (mlp_checkpoint.get("model_state")
+                                or mlp_checkpoint.get("model_state_dict")
+                                or mlp_checkpoint.get("state_dict"))
+                feature_names = mlp_checkpoint.get("feature_cols", [])
+                input_dim   = mlp_checkpoint.get("input_dim", len(feature_names) or len(raw_features))
                 hidden_dims = mlp_checkpoint.get("hidden_dims", [128, 64])
-                n_classes   = mlp_checkpoint.get("n_classes") or mlp_checkpoint.get("num_classes", 5)
+                n_classes   = mlp_checkpoint.get("num_classes") or mlp_checkpoint.get("n_classes", 5)
+                mlp_classes = mlp_checkpoint.get("y_classes")
 
                 if state_dict is not None:
                     # Rebuild the same architecture from saved metadata
@@ -381,8 +451,11 @@ class EnsembleModelStore:
                     mlp.load_state_dict(state_dict)
                     mlp.eval()
 
+                    vec = _ordered_vector(raw_features, feature_names) if feature_names \
+                          else np.array([[raw_features.get(k, 0.0) for k in raw_features]], dtype=np.float32)
+
                     with torch.no_grad():
-                        t = torch.FloatTensor(features.reshape(1, -1))
+                        t = torch.FloatTensor(vec)
                         logits = mlp(t)
                         probs = torch.softmax(logits, dim=1).numpy()[0]
 
@@ -390,15 +463,22 @@ class EnsembleModelStore:
                     breakdown["mlp"] = probs.tolist()
                     if weighted_probs is None:
                         weighted_probs = w * probs
-                    else:
+                        classes = classes or mlp_classes
+                    elif classes and mlp_classes and list(classes) == list(mlp_classes) and len(probs) == len(weighted_probs):
+                        # Only combine if both models agree on class vocabulary/order —
+                        # summing probs across mismatched class spaces would be meaningless.
                         weighted_probs += w * probs
+                    else:
+                        log.debug("cold_start/mlp class vocab differs from knn — kept separate, not summed")
             except Exception as e:
                 log.debug(f"cold_start/mlp reconstruction failed: {e}")
 
-        if weighted_probs is None:
-            return None, {}
+        if weighted_probs is None or not classes:
+            return None, breakdown
 
-        return int(np.argmax(weighted_probs)), breakdown
+        idx = int(np.argmax(weighted_probs))
+        predicted_cuisine = classes[idx] if idx < len(classes) else None
+        return predicted_cuisine, breakdown
 
     def status(self) -> dict:
         return {

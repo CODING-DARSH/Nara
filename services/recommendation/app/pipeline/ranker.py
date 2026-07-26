@@ -466,23 +466,49 @@ def detect_occasion(context: dict, user: dict | None = None) -> str:
 # FIX 3 — Reorder model wired in as a real signal
 # ════════════════════════════════════════════════════════════
 
-def reorder_boost(user: dict, dish: dict, food_graph: dict) -> float:
+def reorder_boost(user: dict, dish: dict, food_graph: dict, dish_interactions: dict | None = None) -> float:
     """
     Ensemble reorder boost (rf + logistic, AUC-weighted).
-    Returns 0.0 immediately if the user has no dish history — running
-    reorder models on empty data produces noise, not signal.
+
+    Combines two independent repeat-preference signals:
+      - `food_graph.top_dishes` — from actually logging a meal (LogMeal.jsx
+        -> food.events.enriched). Strong signal: you really ate this.
+      - `dish_interactions` — from clicking/ordering a recommendation card
+        (tracked in Redis by the /feedback endpoint, see core/redis.py).
+        Weaker signal (a click doesn't guarantee you ate it), but this was
+        previously not read AT ALL for per-dish reinforcement — only
+        cuisine_affinity moved from in-app behavior, so a specific dish you
+        keep engaging with never individually became more likely to
+        resurface. This is what closes that gap.
+
+    Returns 0.0 if the dish has no signal from either source — running
+    reorder models on pure noise produces noise, not signal.
     """
     top_dishes = food_graph.get("top_dishes", []) if food_graph else []
-    if not top_dishes:
-        return 0.0
+    dish_interactions = dish_interactions or {}
 
     dish_name = dish.get("dish_name", "")
-    match = next((d for d in top_dishes if d.get("dish") == dish_name), None)
-    if not match:
+    logged_match  = next((d for d in top_dishes if d.get("dish") == dish_name), None)
+    logged_count  = float(logged_match.get("count", 0)) if logged_match else 0.0
+    click_weight  = float(dish_interactions.get(dish_name, 0.0))
+
+    total_orders = logged_count + click_weight
+    if total_orders <= 0:
         return 0.0
 
-    total_orders = match.get("count", 1)
-    top_dish_names = [d.get("dish") for d in top_dishes]
+    # Combined ranking across both signals — union of every dish with
+    # either kind of signal, ranked by combined weight. Used below as a
+    # days_between proxy (no real per-dish order timestamps exist yet),
+    # so it needs to reflect TRUE relative frequency across both sources,
+    # not just meal-log order.
+    combined_weights: dict[str, float] = {}
+    for d in top_dishes:
+        name = d.get("dish")
+        if name:
+            combined_weights[name] = combined_weights.get(name, 0.0) + float(d.get("count", 0))
+    for name, w in dish_interactions.items():
+        combined_weights[name] = combined_weights.get(name, 0.0) + w
+    top_dish_names = sorted(combined_weights, key=lambda n: combined_weights[n], reverse=True)
 
     if not model_store.reorder_models:
         # Fallback heuristic: frequency-based, capped
@@ -668,6 +694,7 @@ def get_recommendations(
     n: int = 10,
     occasion_explicit: bool = False,
     recently_shown: set | None = None,
+    dish_interactions: dict | None = None,
 ) -> list:
     """
     Main recommendation function with ensemble scoring + cold-start blend.
@@ -832,7 +859,7 @@ def get_recommendations(
         else:
             blended_score = ensemble_score
 
-        boost = reorder_boost(user, dish, food_graph or {})
+        boost = reorder_boost(user, dish, food_graph or {}, dish_interactions)
         final_score = round(blended_score + boost, 4)
 
         # Anti-repeat: dishes shown to this user very recently (tracked via
