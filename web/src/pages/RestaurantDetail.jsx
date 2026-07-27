@@ -105,6 +105,7 @@ export default function RestaurantDetail() {
   const navigate         = useNavigate();
 
   const navRestaurant = state?.restaurant || null;
+  const sessionId     = state?.sessionId || null;
 
   const [menuData, setMenuData] = useState(null);
   const [loading,  setLoading]  = useState(true);
@@ -171,7 +172,7 @@ export default function RestaurantDetail() {
     setAddingDish(dish.dish_name);
     setCartConflict(null);
     try {
-      const { items } = await orders.addCartItem(restaurantId, dish.dish_name, dish.cuisine_type);
+      const { items } = await orders.addCartItem(restaurantId, dish.dish_name, dish.cuisine_type, 1, sessionId);
       const map = {};
       items.forEach(i => { map[i.dish_name] = i.quantity; });
       setCartItems(map);

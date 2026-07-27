@@ -30,7 +30,11 @@ async function request(url, options = {}) {
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || "Request failed");
+    const message = typeof err.detail === "string" ? err.detail : (err.detail?.message || "Request failed");
+    const error = new Error(message);
+    error.status = res.status;
+    error.body   = err.detail;
+    throw error;
   }
   return res.json();
 }
@@ -120,16 +124,16 @@ export const recommendations = {
     });
   },
 
-  getWithRestaurants: (lat, lng, occasion, n = 10, radiusKm = 5) => {
-    const params = new URLSearchParams({ n, radius_km: radiusKm, lat, lng });
+  getWithRestaurants: (lat, lng, occasion, n = 10) => {
+    const params = new URLSearchParams({ n, lat, lng });
     if (occasion) params.append("occasion", occasion);
     return request(`${BASE.recommendation}/v1/recommend/with-restaurants?${params}`, {
       headers: authHeaders(),
     });
   },
 
-  nearbyRestaurants: (lat, lng, radius = 5, cuisine = null) => {
-    const params = new URLSearchParams({ lat, lng, radius_km: radius });
+  nearbyRestaurants: (lat, lng, cuisine = null) => {
+    const params = new URLSearchParams({ lat, lng });
     if (cuisine) params.append("cuisine", cuisine);
     return request(`${BASE.recommendation}/v1/recommend/nearby-restaurants?${params}`, {
       headers: authHeaders(),
@@ -151,6 +155,57 @@ export const restaurants = {
     request(`${BASE.recommendation}/v1/recommend/restaurants/${restaurantId}`, {
       headers: authHeaders(),
     }),
+};
+
+// ── Orders (cart + checkout, no payment) ─────────────────────────
+// Backed by orders/order_items in Neon — see
+// services/recommendation/app/migrations/003_orders.sql and
+// services/recommendation/app/routers/orders.py for the full design:
+// one order row per cart end-to-end (cart -> placed is the SAME row,
+// never a second row), restaurant_id/dish_name validated against local
+// Postgres at the application layer since they can't be real
+// cross-database foreign keys.
+export const orders = {
+  getCart: () =>
+    request(`${BASE.recommendation}/v1/orders/cart`, { headers: authHeaders() }),
+
+  // Throws with error.status === 409 and error.body = { message,
+  // existing_cart_id, existing_restaurant_id } if the user already has an
+  // open cart for a different restaurant — the caller should catch this
+  // and prompt to clear the existing cart before retrying.
+  addCartItem: (restaurantId, dishName, cuisineType, quantity = 1, sessionId = null) =>
+    request(`${BASE.recommendation}/v1/orders/cart/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({
+        restaurant_id: restaurantId,
+        dish_name:     dishName,
+        cuisine_type:  cuisineType,
+        quantity,
+        session_id:    sessionId,
+      }),
+    }),
+
+  removeCartItem: (dishName) =>
+    request(`${BASE.recommendation}/v1/orders/cart/items/${encodeURIComponent(dishName)}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    }),
+
+  clearCart: () =>
+    request(`${BASE.recommendation}/v1/orders/cart`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    }),
+
+  checkout: () =>
+    request(`${BASE.recommendation}/v1/orders/checkout`, {
+      method: "POST",
+      headers: authHeaders(),
+    }),
+
+  history: () =>
+    request(`${BASE.recommendation}/v1/orders/history`, { headers: authHeaders() }),
 };
 
 // ── Conversation ───────────────────────────────────────────────

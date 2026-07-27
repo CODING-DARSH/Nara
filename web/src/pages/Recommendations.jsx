@@ -329,7 +329,7 @@ export default function Recommendations() {
                 topDishes={dishes}
                 index={i}
                 onClick={() => navigate(`/restaurant/${restaurant.id}`, {
-                  state: { restaurant }
+                  state: { restaurant, sessionId: data?.session_id || null }
                 })}
               />
             ))
