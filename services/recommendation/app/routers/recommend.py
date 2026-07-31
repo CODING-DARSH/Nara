@@ -19,6 +19,7 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, Query
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -206,6 +207,13 @@ async def recommend(
     lng: Optional[float]      = Query(None, description="User longitude"),
     occasion: Optional[str]   = Query(None, description="breakfast/lunch/snack/dinner — when set, filtering is STRICT"),
     n: int                    = Query(10, ge=1, le=20),
+    debug: bool               = Query(False, description="Include per-model standalone/ensemble breakdown "
+                                                            "(reorder, cold-start, occasion detection, ranker, "
+                                                            "health) in each dish's _models field. Bypasses the "
+                                                            "recs cache in both directions — never read from it, "
+                                                            "never written to it — since this response shape is "
+                                                            "heavier than what the cache is meant to hold and "
+                                                            "callers of debug=True want a fresh computation anyway."),
     current_user: dict        = Depends(get_current_user),
     credentials               = Depends(bearer),
 ):
@@ -219,9 +227,10 @@ async def recommend(
                              # same hour/occasion reuses the cached list instead
                              # of re-running the full ensemble.
 
-    cached = await get_cached_recommendations(user_id, occasion, hour_bucket)
-    if cached is not None:
-        return {**cached, "_cache": "hit"}
+    if not debug:
+        cached = await get_cached_recommendations(user_id, occasion, hour_bucket)
+        if cached is not None:
+            return {**cached, "_cache": "hit"}
 
     food_graph = await fetch_food_graph(token)
     profile    = await fetch_user_profile(token)
@@ -235,11 +244,13 @@ async def recommend(
     # FIX 2: occasion_explicit=True whenever the caller passed an occasion
     # (i.e. the user tapped a specific tab in the UI) -> strict filtering,
     # no silent fallback to the unfiltered list.
-    recommendations = get_recommendations(
+    recommendations = await run_in_threadpool(
+        get_recommendations,
         user, context, food_graph, n=n,
         occasion_explicit=bool(occasion),
         recently_shown=recently_shown,
         dish_interactions=dish_interactions,
+        debug=debug,
     )
 
     response = {
@@ -251,7 +262,8 @@ async def recommend(
         "_models": model_store.status(),
     }
 
-    await set_cached_recommendations(user_id, occasion, hour_bucket, response)
+    if not debug:
+        await set_cached_recommendations(user_id, occasion, hour_bucket, response)
 
     session_id   = str(uuid.uuid4())
     shown_dishes = [{"dish_name": r["dish_name"], "cuisine_type": r.get("cuisine_type")}
@@ -423,7 +435,8 @@ async def recommend_with_restaurants(
 
     async with LocalSession() as db:
         for attempt in range(MAX_FETCH_MULTIPLIER):
-            recommendations = get_recommendations(
+            recommendations = await run_in_threadpool(
+                get_recommendations,
                 user, context, food_graph, n=fetch_n,
                 occasion_explicit=bool(occasion),
                 dish_interactions=dish_interactions,
@@ -538,7 +551,7 @@ async def cold_start_recommend(
     now     = datetime.now()
     context = _build_context(now, None, None, None, None)
 
-    recommendations = get_recommendations(user, context, {}, n=n, occasion_explicit=False)
+    recommendations = await run_in_threadpool(get_recommendations, user, context, {}, n=n, occasion_explicit=False)
     return {
         "user_type":       "cold_start",
         "count":           len(recommendations),
@@ -669,19 +682,40 @@ async def get_restaurant_detail(
     # price-wise, not a generic user default.
     user["avg_cost_for_two"] = resto.get("avg_cost_for_two", 400)
 
-    # Score every available menu item through the pipeline
+    # FIX: this whole scoring loop is synchronous, CPU-bound work
+    # (score_dish/health_score_dish/reorder_boost per menu item, same
+    # ensemble models get_recommendations() uses) that used to run inline
+    # on the event loop — blocking the ENTIRE service for every other
+    # request while a single restaurant's menu was being scored. Extracted
+    # into _score_restaurant_menu() and run via run_in_threadpool so it
+    # doesn't freeze concurrent requests the way get_recommendations()
+    # itself was (see the same fix applied to all three
+    # get_recommendations() call sites above).
+    scored = await run_in_threadpool(_score_restaurant_menu, user, menu_items, context, food_graph, resto)
+
+    return {
+        "restaurant": resto,
+        "count":      len(scored),
+        "menu":       scored,
+    }
+
+
+def _score_restaurant_menu(user: dict, menu_items: list, context: dict, food_graph: dict, resto: dict) -> list:
+    """
+    Synchronous — scores every menu item through the same ensemble
+    pipeline get_recommendations() uses, but against a single
+    restaurant's real menu (with real prices) rather than the global
+    DISH_CANDIDATES pool. Called via run_in_threadpool from
+    get_restaurant_detail() so this CPU-bound work doesn't block the
+    event loop.
+    """
+    from app.pipeline.ranker import (
+        score_dish, health_score_dish, reorder_boost,
+        REGION_CUISINE_AFFINITY,
+    )
+
     scored = []
     for item in menu_items:
-        # Temporarily inject this restaurant's menu item as the candidate
-        # so get_recommendations' per-dish scoring logic runs on it.
-        # We call the individual scoring functions directly rather than
-        # going through get_recommendations() (which works on DISH_CANDIDATES
-        # as the candidate pool) to avoid replacing the global pool.
-        from app.pipeline.ranker import (
-            score_dish, health_score_dish, reorder_boost,
-            REGION_CUISINE_AFFINITY,
-        )
-
         cuisine = item.get("cuisine_type", "north_indian")
         region  = user.get("region")
         region_affinity = REGION_CUISINE_AFFINITY.get(region, {}).get(cuisine, 0.0)
@@ -731,12 +765,7 @@ async def get_restaurant_detail(
         })
 
     scored.sort(key=lambda x: x["score"], reverse=True)
-
-    return {
-        "restaurant": resto,
-        "count":      len(scored),
-        "menu":       scored,
-    }
+    return scored
 
 
 def _get_season(month: int) -> str:

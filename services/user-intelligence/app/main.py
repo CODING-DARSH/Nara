@@ -10,6 +10,7 @@ from app.core.redis import close_redis
 from app.routers.health_profile import router as health_router
 from app.routers.food_graph import router as graph_router
 from app.workers.graph_update_worker import run_worker as run_graph_update_worker
+from app.workers.feedback_update_worker import run_worker as run_feedback_update_worker
 
 settings = get_settings()
 log = structlog.get_logger()
@@ -32,6 +33,15 @@ async def lifespan(app: FastAPI):
     _worker_tasks["graph_update"] = asyncio.create_task(
         run_graph_update_worker(),
         name="graph_update_worker",
+    )
+    # Feedback loop: consumes recommendation.feedback (clicks/orders/skips
+    # from the recommendation UI) and nudges cuisine_affinity — previously
+    # nothing subscribed to this topic at all, so browsing/ordering behavior
+    # in the recommendation flow had zero effect on future rankings; only
+    # explicitly logging a meal did.
+    _worker_tasks["feedback_update"] = asyncio.create_task(
+        run_feedback_update_worker(),
+        name="feedback_update_worker",
     )
     log.info("nara.user-intelligence.workers_started")
 

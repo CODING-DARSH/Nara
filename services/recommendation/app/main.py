@@ -11,7 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import check_connections
 from app.core.model_loader import model_store
+from app.core.kafka import start_kafka_producer, stop_kafka_producer
+from app.core.redis import close_redis
 from app.routers.recommend import router as recommend_router
+from app.routers.orders import router as orders_router
 
 log      = structlog.get_logger()
 settings = get_settings()
@@ -21,9 +24,15 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     log.info("recommendation_service.starting")
     model_store.load_all(settings.models_dir)
+    # Feedback loop: recommendation.feedback topic existed in kafka-init but
+    # nothing produced to it — this is the producer for impression/feedback
+    # events (see app/core/kafka.py and the /v1/recommend/feedback endpoint).
+    await start_kafka_producer()
     log.info("recommendation_service.ready", models=model_store.status())
     yield
     log.info("recommendation_service.stopping")
+    await stop_kafka_producer()
+    await close_redis()
 
 
 app = FastAPI(
@@ -41,6 +50,7 @@ app.add_middleware(
 )
 
 app.include_router(recommend_router)
+app.include_router(orders_router)
 
 
 @app.get("/health")

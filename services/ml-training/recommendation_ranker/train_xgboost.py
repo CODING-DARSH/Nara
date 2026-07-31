@@ -76,7 +76,11 @@ def load_and_prepare_data() -> tuple:
 
     # Add condition flags to binary
     condition_cols = [c for c in CONDITION_FLAGS if c in df.columns]
-    bin_cols = list(set(bin_cols + condition_cols))
+    # NOTE: list(set(...)) does not guarantee a stable order across
+    # process runs (Python string hash randomization), which can silently
+    # shuffle the binary feature columns relative to what inference code
+    # assumes. dict.fromkeys() dedupes while preserving insertion order.
+    bin_cols = list(dict.fromkeys(bin_cols + condition_cols))
 
     df[num_cols] = df[num_cols].fillna(0)
     df[bin_cols] = df[bin_cols].fillna(0).astype(int)

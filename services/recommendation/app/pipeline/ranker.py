@@ -409,7 +409,7 @@ def health_score_dish(user: dict, dish: dict, context: dict | None = None) -> di
     }
 
 
-def detect_occasion(context: dict, user: dict | None = None) -> str:
+def detect_occasion(context: dict, user: dict | None = None, debug_out: dict | None = None) -> str:
     """
     Ensemble occasion detection — combines xgb + rf + dt via weighted vote.
     Falls back to rule-based if no models loaded.
@@ -454,6 +454,8 @@ def detect_occasion(context: dict, user: dict | None = None) -> str:
             OCCASION_MAP = {0: "breakfast", 1: "dinner", 2: "late_night", 3: "lunch", 4: "snack"}
 
             pred_idx, breakdown = model_store.ensemble_occasion_predict(features)
+            if debug_out is not None:
+                debug_out["occasion_detection"] = {"predicted_idx": pred_idx, "standalone": breakdown}
             if pred_idx is not None:
                 return OCCASION_MAP.get(pred_idx, "lunch")
         except Exception as e:
@@ -466,7 +468,8 @@ def detect_occasion(context: dict, user: dict | None = None) -> str:
 # FIX 3 — Reorder model wired in as a real signal
 # ════════════════════════════════════════════════════════════
 
-def reorder_boost(user: dict, dish: dict, food_graph: dict, dish_interactions: dict | None = None) -> float:
+def reorder_boost(user: dict, dish: dict, food_graph: dict, dish_interactions: dict | None = None,
+                   debug_out: dict | None = None) -> float:
     """
     Ensemble reorder boost (rf + logistic, AUC-weighted).
 
@@ -552,7 +555,9 @@ def reorder_boost(user: dict, dish: dict, food_graph: dict, dish_interactions: d
             "is_vegetarian": float(1 if user.get("is_vegetarian") else 0),
         }
 
-        reorder_prob, _ = model_store.ensemble_reorder_score(raw)
+        reorder_prob, reorder_breakdown = model_store.ensemble_reorder_score(raw)
+        if debug_out is not None:
+            debug_out["reorder"] = {"ensemble_prob": reorder_prob, "standalone": reorder_breakdown}
         return round(min(reorder_prob * 0.12, 0.12), 4)
 
     except Exception as e:
@@ -695,6 +700,7 @@ def get_recommendations(
     occasion_explicit: bool = False,
     recently_shown: set | None = None,
     dish_interactions: dict | None = None,
+    debug: bool = False,
 ) -> list:
     """
     Main recommendation function with ensemble scoring + cold-start blend.
@@ -712,7 +718,8 @@ def get_recommendations(
         log.warning("No dish candidates loaded")
         return []
 
-    occasion = context.get("occasion") or detect_occasion(context, user)
+    occasion_debug = {}
+    occasion = context.get("occasion") or detect_occasion(context, user, debug_out=occasion_debug if debug else None)
     context["occasion"] = occasion
 
     conditions = user.get("conditions", [])
@@ -755,6 +762,7 @@ def get_recommendations(
     # matching the real training schema instead, and let model_store order
     # it per-model from each model's own saved feature_cols.
     predicted_cuisine = None
+    cold_breakdown = {}
     if use_cold_start:
         try:
             restr_list = [r.strip() for r in (user.get("dietary_restrictions") or "").split("|") if r.strip()] \
@@ -809,6 +817,8 @@ def get_recommendations(
                           f"blend_weight={blend_weight:.2f}")
         except Exception as e:
             log.debug(f"Cold-start feature build failed: {e}")
+    else:
+        cold_breakdown = {}
 
     scored = []
     for rank, dish in enumerate(candidates):
@@ -859,7 +869,9 @@ def get_recommendations(
         else:
             blended_score = ensemble_score
 
-        boost = reorder_boost(user, dish, food_graph or {}, dish_interactions)
+        reorder_debug = {}
+        boost = reorder_boost(user, dish, food_graph or {}, dish_interactions,
+                               debug_out=reorder_debug if debug else None)
         final_score = round(blended_score + boost, 4)
 
         # Anti-repeat: dishes shown to this user very recently (tracked via
@@ -890,11 +902,21 @@ def get_recommendations(
             "is_veg":    dish.get("is_veg"),
             "allergens": dish.get("allergens", []),
             "occasion":  occasion,
-            # Per-request model breakdown — logged, not sent to frontend
+            # Per-request model breakdown. ranker/health breakdown were
+            # already attached unconditionally before this change — reorder/
+            # cold_start/occasion_detection are new, gated behind debug=True
+            # so a normal (non-debug) response doesn't carry breakdown data
+            # nobody asked for.
             "_models": {
                 "ranker":       ranker_breakdown,
                 "health":       health_info.get("breakdown", {}),
                 "blend_weight": round(blend_weight, 2),
+                **({
+                    "reorder":            reorder_debug.get("reorder", {}),
+                    "cold_start":         cold_breakdown,
+                    "cold_start_predicted_cuisine": predicted_cuisine,
+                    "occasion_detection": occasion_debug,
+                } if debug else {}),
             },
         })
 

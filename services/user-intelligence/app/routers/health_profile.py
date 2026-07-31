@@ -56,6 +56,12 @@ async def create_health_profile(
         weight_kg=body.weight_kg,
         height_cm=body.height_cm,
         gender=body.gender,
+        income_tier=body.income_tier,
+        region=body.region,
+        occupation=body.occupation,
+        living_situation=body.living_situation,
+        stress_level=body.stress_level,
+        is_wfh=body.is_wfh,
     )
     db.add(profile)
     await db.commit()
@@ -121,6 +127,12 @@ async def update_health_profile(
         weight_kg=body.weight_kg,
         height_cm=body.height_cm,
         gender=body.gender,
+        income_tier=body.income_tier,
+        region=body.region,
+        occupation=body.occupation,
+        living_situation=body.living_situation,
+        stress_level=body.stress_level,
+        is_wfh=body.is_wfh,
     )
     db.add(profile)
     await db.commit()

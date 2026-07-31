@@ -58,6 +58,31 @@ class UserHealthProfile(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
+    # ── Added: real signal for previously-hardcoded ranker/occasion features ──
+    # These were constants in recommendation/app/routers/recommend.py
+    # (_build_user) and ranker.py (detect_occasion) for every user. Now
+    # collected at onboarding so the trained models see real per-user
+    # signal instead of the same value for everyone.
+
+    # Ranker categorical feature "income_tier" — self-reported, no honest
+    # way to infer this from behavior. NULL = not yet provided; treated as
+    # "unknown" downstream, never silently defaulted to "medium".
+    income_tier: Mapped[str] = mapped_column(Text, nullable=True)  # low / medium / high
+
+    # Ranker categorical feature "region" — derived once from the state the
+    # user selects at onboarding (see _state_to_region in recommend.py),
+    # stored directly rather than recomputed from birthplace each request.
+    region: Mapped[str] = mapped_column(Text, nullable=True)  # north / south / east / west
+
+    # Occasion classifier categorical features. Same reasoning: no honest
+    # proxy exists without asking, so these stay NULL until the user sets
+    # them (Profile page) rather than being faked as a fixed encoded value
+    # (the old code sent literal 0/2/0/0/0 for every user, every request).
+    occupation: Mapped[str] = mapped_column(Text, nullable=True)
+    living_situation: Mapped[str] = mapped_column(Text, nullable=True)
+    stress_level: Mapped[str] = mapped_column(Text, nullable=True)
+    is_wfh: Mapped[bool] = mapped_column(Boolean, nullable=True)
+
 
 class FoodGraph(Base):
     """
@@ -96,8 +121,13 @@ class FoodGraph(Base):
     # {"skips_breakfast": true, "heavy_dinner": true, "consistent_lunch": false}
     detected_patterns: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
-    # Total meals logged
+    # Total meals logged (enrichment_status = 'done', counted toward graph)
     total_meals_logged: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Meals logged in the same 30d window that are still enriching
+    # (enrichment_status in 'pending'/'processing'). Lets the frontend show
+    # "N meals still processing" instead of looking stale right after a log.
+    total_meals_pending: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Last time graph was recomputed
     last_computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
