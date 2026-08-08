@@ -13,7 +13,7 @@
 # import psycopg2
 # from datetime import datetime
 
-# LOCAL_DB = "postgresql://nara:nara_secret@127.0.0.1:5433/nara_data"
+# LOCAL_DB = "postgresql://neondb_owner:npg_VUpS27YXsGKQ@ep-orange-lake-aoafbm87.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
 
 # # ============================================================
 # # INDIAN NUTRITION DATABASE
@@ -897,7 +897,8 @@ import json
 import psycopg2
 from datetime import datetime
 
-LOCAL_DB = "postgresql://nara:nara_secret@127.0.0.1:5433/nara_data"
+LOCAL_DB = "postgresql://neondb_owner:npg_GyEfuO9tA7DN@ep-cool-snow-az48g4au-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
+
 
 DISHES = [
 
@@ -2990,3 +2991,4 @@ def seed():
 
 if __name__ == "__main__":
     seed()
+

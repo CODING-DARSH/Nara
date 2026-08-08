@@ -58,3 +58,4 @@ async def health():
 async def unhandled_exception_handler(request: Request, exc: Exception):
     log.error("unhandled_exception", path=request.url.path, error=str(exc))
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+

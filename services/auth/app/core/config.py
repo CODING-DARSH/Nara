@@ -9,13 +9,13 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # Database
-    database_url: str = "postgresql+asyncpg://nara:nara_secret@localhost:5432/nara"
+    database_url: str
 
     # Redis
-    redis_url: str = "redis://:nara_redis_secret@localhost:6379/0"
+    redis_url: str
 
     # JWT
-    jwt_secret_key: str = "change_me_in_production"
+    jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
@@ -33,3 +33,5 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+

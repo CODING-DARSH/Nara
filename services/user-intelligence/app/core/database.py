@@ -65,3 +65,4 @@ async def get_local_db():
             raise
         finally:
             await session.close()
+

@@ -14,7 +14,7 @@ import psycopg2
 import requests
 from datetime import datetime
 
-LOCAL_DB = "postgresql://nara:nara_secret@127.0.0.1:5433/nara_data"
+LOCAL_DB = "postgresql://neondb_owner:npg_VUpS27YXsGKQ@ep-orange-lake-aoafbm87.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 # Bounding boxes for Indian cities
 CITY_BOUNDS = {
@@ -162,12 +162,12 @@ def seed_city(city_name: str):
         cur.execute("""
             INSERT INTO restaurants (
                 external_id, source, name, cuisine_types,
-                location, address, city, area,
+                location, address, city,
                 avg_cost_for_two, delivery_enabled, raw_data, synced_at
             )
             VALUES (%s, %s, %s, %s,
                     ST_MakePoint(%s, %s)::geography,
-                    %s, %s, %s, %s, %s, %s, %s)
+                    %s, %s, %s, %s, %s, %s)
             ON CONFLICT DO NOTHING
         """, (
             external_id,
@@ -177,7 +177,6 @@ def seed_city(city_name: str):
             lon, lat,
             tags.get("addr:full") or tags.get("addr:street", ""),
             bounds["display"],
-            area,
             avg_cost,
             True,
             json.dumps(tags),
@@ -203,3 +202,4 @@ if __name__ == "__main__":
 
     seed_city(args.city)
     print("\nTo seed another city: python scripts/seed_restaurants_osm.py --city mumbai")
+

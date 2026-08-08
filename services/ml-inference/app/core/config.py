@@ -14,10 +14,10 @@ class Settings(BaseSettings):
 
     # ── Databases ─────────────────────────────────────────────
     # Neon (user data — food_events, food_event_nutrition)
-    neon_database_url: str = "postgresql+asyncpg://nara:nara_secret@localhost:5433/nara"
+    neon_database_url: str
 
     # Local Postgres (nutrition_kb, restaurants)
-    local_database_url: str = "postgresql+asyncpg://nara:nara_secret@postgres:5432/nara_data"
+    local_database_url: str
 
     # ── Kafka ─────────────────────────────────────────────────
     kafka_bootstrap_servers: str = "kafka:9092"
@@ -31,8 +31,8 @@ class Settings(BaseSettings):
 
     # ── MinIO ─────────────────────────────────────────────────
     minio_endpoint: str = "minio:9000"
-    minio_access_key: str = "nara_minio"
-    minio_secret_key: str = "nara_minio_secret"
+    minio_access_key: str
+    minio_secret_key: str
     minio_secure: bool = False
     minio_bucket_raw: str = "nara-food-photos-raw"
 
@@ -55,3 +55,5 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+

@@ -18,7 +18,7 @@ import requests
 from datetime import datetime
 
 USDA_API_KEY = os.getenv("USDA_API_KEY", "DEMO_KEY")
-LOCAL_DB = "postgresql://nara:nara_secret@127.0.0.1:5433/nara_data"
+LOCAL_DB = "postgresql://neondb_owner:npg_GyEfuO9tA7DN@ep-cool-snow-az48g4au-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
 
 # ── Comprehensive Indian dish list for Bangalore context ──────
 DISHES = [
@@ -188,3 +188,4 @@ def seed():
 
 if __name__ == "__main__":
     seed()
+

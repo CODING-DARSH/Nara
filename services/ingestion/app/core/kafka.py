@@ -34,3 +34,4 @@ async def emit(topic: str, payload: dict, key: str = None):
     key_bytes = key.encode("utf-8") if key else None
     await producer.send_and_wait(topic, value=payload, key=key_bytes)
     log.info("kafka.emitted", topic=topic, key=key)
+

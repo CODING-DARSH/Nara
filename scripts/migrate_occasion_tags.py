@@ -21,7 +21,7 @@ Run:
 import json
 import psycopg2
 
-LOCAL_DB = "postgresql://nara:nara_secret@127.0.0.1:5433/nara_data"
+LOCAL_DB = "postgresql://neondb_owner:npg_VUpS27YXsGKQ@ep-orange-lake-aoafbm87.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
 
 # Every dish currently in the 176-dish KB, tagged by real-world eating
 # pattern (not by cuisine label). A dish can have multiple tags.
@@ -284,3 +284,5 @@ def migrate():
 
 if __name__ == "__main__":
     migrate()
+
+

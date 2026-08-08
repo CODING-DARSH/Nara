@@ -40,3 +40,4 @@ def generate_presigned_url(key: str, expires_in: int = 3600) -> str:
         Params={"Bucket": settings.photo_bucket, "Key": key},
         ExpiresIn=expires_in,
     )
+

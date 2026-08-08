@@ -9,9 +9,9 @@ class Settings(BaseSettings):
     service_name: str = "conversation"
     environment:  str = "development"
 
-    neon_database_url: str = "postgresql+asyncpg://neondb_owner:npg_VUpS27YXsGKQ@ep-orange-lake-aoafbm87.c-2.ap-southeast-1.aws.neon.tech/neondb?ssl=require"
+    neon_database_url: str
 
-    jwt_secret_key: str = "super_secret_jwt_key_change_in_production"
+    jwt_secret_key: str
     jwt_algorithm:  str = "HS256"
 
     user_intelligence_url:  str = "http://user-intelligence-service:8002"
@@ -45,3 +45,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+

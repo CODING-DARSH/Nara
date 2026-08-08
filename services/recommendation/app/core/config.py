@@ -5,15 +5,13 @@ import os
 from functools import lru_cache
 from pydantic_settings import BaseSettings
 
-
 class Settings(BaseSettings):
     service_name: str = "recommendation"
     environment: str = "development"
 
     # ── Databases ─────────────────────────────────────────────
-    neon_database_url: str = "postgresql+asyncpg://neondb_owner:npg_VUpS27YXsGKQ@ep-orange-lake-aoafbm87.c-2.ap-southeast-1.aws.neon.tech/neondb?ssl=require"
-    local_database_url: str = "postgresql+asyncpg://nara:nara_secret@postgres:5432/nara_data"
-
+    neon_database_url: str
+    local_database_url: str
     # ── Services ──────────────────────────────────────────────
     user_intelligence_url: str = "http://user-intelligence-service:8002"
     ml_inference_url: str = "http://ml-inference-service:8004"
@@ -22,10 +20,10 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = "kafka:9092"
 
     # ── Redis ─────────────────────────────────────────────────
-    redis_url: str = "redis://:nara_redis_secret@redis:6379/1"
+    redis_url: str
 
     # ── JWT ───────────────────────────────────────────────────
-    jwt_secret_key: str = "super_secret_jwt_key_change_in_production"
+    jwt_secret_key: str
     jwt_algorithm: str = "HS256"
 
     # ── Models dir ────────────────────────────────────────────
@@ -54,3 +52,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+

@@ -123,3 +123,4 @@ def _guess_occasion(hour: int) -> str:
         return "dinner"
     else:
         return "late_night"
+
