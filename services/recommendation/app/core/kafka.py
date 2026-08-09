@@ -1,63 +1,52 @@
 """
-NARA — Recommendation Service Kafka Producer
-
-The `recommendation.feedback` topic was created by kafka-init in
-docker-compose but nothing in this service ever produced to it — every
-impression, click, skip, and order the recommendation pipeline generated
-went nowhere, so the models could never be retrained on their own live
-outcomes. This wires up a real producer.
-
-Two event types are published:
-  - "impression": every dish list actually returned to a user (fire-and-forget,
-    called from the recommend router after get_recommendations()).
-  - "feedback": explicit user action on a specific dish (skip/click/order),
-    submitted via POST /v1/recommend/feedback.
+NARA — Recommendation Service "Kafka" replacement (now Redis Streams)
+Save as: services/recommendation/app/core/kafka.py
+(keep filename/imports the same — routers/recommend.py and
+routers/orders.py both do `from app.core.kafka import publish_feedback_event`)
 """
-import json
 import time
 import structlog
-from aiokafka import AIOKafkaProducer
+from redis.asyncio import Redis
 from app.core.config import get_settings
+from app.core.redis_streams import emit as _emit
 
 log = structlog.get_logger()
 settings = get_settings()
 
-FEEDBACK_TOPIC = "recommendation.feedback"
+FEEDBACK_STREAM = "recommendation.feedback"
 
-_producer: AIOKafkaProducer | None = None
+_redis: Redis | None = None
 
 
 async def start_kafka_producer():
-    global _producer
-    if _producer is not None:
+    """Name kept for zero-change call sites in main.py's startup hook."""
+    global _redis
+    if _redis is not None:
         return
-    _producer = AIOKafkaProducer(
-        bootstrap_servers=settings.kafka_bootstrap_servers,
-        value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-    )
-    await _producer.start()
-    log.info("kafka_producer.started", topic=FEEDBACK_TOPIC)
+    _redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    log.info("redis_stream.producer.started", stream=FEEDBACK_STREAM)
 
 
 async def stop_kafka_producer():
-    global _producer
-    if _producer is not None:
-        await _producer.stop()
-        _producer = None
-        log.info("kafka_producer.stopped")
+    global _redis
+    if _redis is not None:
+        await _redis.close()
+        _redis = None
+        log.info("redis_stream.producer.stopped")
 
 
 async def publish_feedback_event(event: dict):
     """
-    Fire-and-forget publish. A feedback-loop event failing to send should
-    never fail the user-facing request — log and move on.
+    Same fire-and-forget contract as before: never raise into the
+    caller, a feedback event failing to send should never fail the
+    user-facing request.
     """
-    global _producer
-    if _producer is None:
-        log.warning("kafka_producer.not_started", event_type=event.get("event_type"))
+    global _redis
+    if _redis is None:
+        log.warning("redis_stream.producer.not_started", event_type=event.get("event_type"))
         return
     event.setdefault("emitted_at", time.time())
     try:
-        await _producer.send_and_wait(FEEDBACK_TOPIC, value=event)
+        await _emit(_redis, FEEDBACK_STREAM, event)
     except Exception as e:
-        log.warning("kafka_producer.publish_failed", error=str(e), event_type=event.get("event_type"))
+        log.warning("redis_stream.publish_failed", error=str(e), event_type=event.get("event_type"))
