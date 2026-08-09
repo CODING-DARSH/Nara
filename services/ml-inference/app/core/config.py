@@ -19,11 +19,6 @@ class Settings(BaseSettings):
     # Local Postgres (nutrition_kb, restaurants)
     local_database_url: str
 
-    # ── Kafka ─────────────────────────────────────────────────
-    kafka_bootstrap_servers: str = "kafka:9092"
-    kafka_consumer_group_enrichment: str = "ml-enrichment-workers"
-    kafka_consumer_group_vision: str = "ml-vision-workers"
-
     # ── Claude Vision API ─────────────────────────────────────
     anthropic_api_key: str = ""
     vision_model: str = "claude-opus-4-5-20251101"
@@ -31,8 +26,8 @@ class Settings(BaseSettings):
 
     # ── MinIO ─────────────────────────────────────────────────
     minio_endpoint: str = "minio:9000"
-    minio_access_key: str
-    minio_secret_key: str
+    minio_access_key: str = "nara_minio"
+    minio_secret_key: str = "nara_minio_secret"
     minio_secure: bool = False
     minio_bucket_raw: str = "nara-food-photos-raw"
 

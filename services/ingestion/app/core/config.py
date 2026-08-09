@@ -13,8 +13,7 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str
 
-    # Kafka
-    kafka_bootstrap_servers: str = "localhost:29092"
+
 
     # JWT
     jwt_secret_key: str

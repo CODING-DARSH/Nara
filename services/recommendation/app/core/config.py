@@ -16,8 +16,6 @@ class Settings(BaseSettings):
     user_intelligence_url: str = "http://user-intelligence-service:8002"
     ml_inference_url: str = "http://ml-inference-service:8004"
 
-    # ── Kafka ─────────────────────────────────────────────────
-    kafka_bootstrap_servers: str = "kafka:9092"
 
     # ── Redis ─────────────────────────────────────────────────
     redis_url: str
