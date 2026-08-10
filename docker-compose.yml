@@ -4,136 +4,7 @@ networks:
   nara-net:
     driver: bridge
 
-volumes:
-  redis_data:
-  minio_data:
-  kafka_data:
-  zookeeper_data:
-
 services:
-
-  redis:
-    image: redis:7-alpine
-    container_name: nara-redis
-    restart: unless-stopped
-    command: ["redis-server", "--maxmemory", "2gb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "nara_redis_secret"]
-    volumes:
-      - redis_data:/data
-    ports:
-      - "6379:6379"
-    networks:
-      - nara-net
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "nara_redis_secret", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.0
-    container_name: nara-zookeeper
-    restart: unless-stopped
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-      KAFKA_OPTS: "-Dzookeeper.admin.enableServer=false"
-    volumes:
-      - zookeeper_data:/var/lib/zookeeper
-    networks:
-      - nara-net
-    healthcheck:
-      test: ["CMD", "bash", "-c", "echo ruok | timeout 2 bash -c 'cat > /dev/tcp/localhost/2181' && echo ok"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-
-  kafka:
-    image: confluentinc/cp-kafka:7.6.0
-    container_name: nara-kafka
-    restart: unless-stopped
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_LOG_RETENTION_HOURS: 168
-    volumes:
-      - kafka_data:/var/lib/kafka/data
-    ports:
-      - "29092:29092"
-    networks:
-      - nara-net
-    healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-
-  kafka-init:
-    image: confluentinc/cp-kafka:7.6.0
-    container_name: nara-kafka-init
-    depends_on:
-      kafka:
-        condition: service_healthy
-    networks:
-      - nara-net
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic food.events.raw --partitions 6 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic food.events.enriched --partitions 6 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic photo.upload.pending --partitions 4 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic user.graph.updated --partitions 6 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic recommendation.feedback --partitions 4 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic wearable.sync.events --partitions 2 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic api.requests --partitions 4 --replication-factor 1 &&
-        echo "All Kafka topics created."
-
-  minio:
-    image: minio/minio:latest
-    container_name: nara-minio
-    restart: unless-stopped
-    command: ["server", "/data", "--console-address", ":9001"]
-    environment:
-      MINIO_ROOT_USER: nara_minio
-      MINIO_ROOT_PASSWORD: nara_minio_secret
-    volumes:
-      - minio_data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    networks:
-      - nara-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  minio-init:
-    image: minio/mc:latest
-    container_name: nara-minio-init
-    depends_on:
-      minio:
-        condition: service_healthy
-    networks:
-      - nara-net
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        mc alias set nara http://minio:9000 nara_minio nara_minio_secret &&
-        mc mb --ignore-existing nara/nara-food-photos-raw &&
-        mc mb --ignore-existing nara/nara-food-photos-processed &&
-        mc mb --ignore-existing nara/nara-model-artifacts &&
-        mc mb --ignore-existing nara/nara-exports &&
-        echo "All MinIO buckets created."
 
   adminer:
     image: adminer:latest
@@ -164,9 +35,6 @@ services:
       - "8001:8001"
     networks:
       - nara-net
-    depends_on:
-      redis:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 15s
@@ -181,8 +49,8 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      LOCAL_DATABASE_URL: ${LOCAL_DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
       ENVIRONMENT: development
@@ -190,11 +58,6 @@ services:
       - "8002:8002"
     networks:
       - nara-net
-    depends_on:
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 15s
@@ -210,25 +73,17 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: nara_minio
-      MINIO_SECRET_KEY: nara_minio_secret
-      MINIO_SECURE: "false"
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_SECURE: ${MINIO_SECURE}
       ENVIRONMENT: development
     ports:
       - "8003:8003"
     networks:
       - nara-net
-    depends_on:
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
       interval: 15s
@@ -244,7 +99,7 @@ services:
     environment:
       NEON_DATABASE_URL: ${NEON_DATABASE_URL}
       LOCAL_DATABASE_URL: ${LOCAL_DATABASE_URL}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_URL: ${REDIS_URL}
       SPACY_MODEL: en_core_web_sm
       FUZZY_MATCH_THRESHOLD: "80"
       ENVIRONMENT: development
@@ -252,9 +107,6 @@ services:
       - "8004:8004"
     networks:
       - nara-net
-    depends_on:
-      kafka:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
       interval: 15s
@@ -270,12 +122,11 @@ services:
     environment:
       NEON_DATABASE_URL: ${NEON_DATABASE_URL}
       LOCAL_DATABASE_URL: ${LOCAL_DATABASE_URL}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
-      USER_INTELLIGENCE_URL: http://user-intelligence-service:8002
-      ML_INFERENCE_URL: http://ml-inference-service:8004
+      USER_INTELLIGENCE_URL: ${USER_INTELLIGENCE_URL}
+      ML_INFERENCE_URL: ${ML_INFERENCE_URL}
       MODELS_DIR: /app/models
       ACTIVE_RANKER: lgbm
       ACTIVE_COLD_START: wide_deep
@@ -290,11 +141,6 @@ services:
       - "8005:8005"
     networks:
       - nara-net
-    depends_on:
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
       interval: 15s
@@ -311,9 +157,9 @@ services:
       NEON_DATABASE_URL: ${NEON_DATABASE_URL}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
-      USER_INTELLIGENCE_URL: http://user-intelligence-service:8002
-      RECOMMENDATION_URL: http://recommendation-service:8005
-      ML_INFERENCE_URL: http://ml-inference-service:8004
+      USER_INTELLIGENCE_URL: ${USER_INTELLIGENCE_URL}
+      RECOMMENDATION_URL: ${RECOMMENDATION_URL}
+      ML_INFERENCE_URL: ${ML_INFERENCE_URL}
       INTENT_MODEL: typeform/distilbert-base-uncased-mnli
       NER_MODEL: en_core_web_sm
       RESPONSE_MODEL: template

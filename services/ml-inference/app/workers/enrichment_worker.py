@@ -1,6 +1,6 @@
 """
 Enrichment Worker — Core ML Inference Pipeline
-Kafka consumer on food.events.raw
+Redis Streams consumer on food.events.raw (was Kafka)
 
 Flow for each event:
   1. Consume message from food.events.raw
@@ -24,12 +24,13 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+from redis.asyncio import Redis
 from sqlalchemy import select, update
 
 from app.core.config import get_settings
 from app.core.database import NeonSession, LocalSession
 from app.core.metrics import metrics, Timer
+from app.core.redis_streams import consume_loop, emit as redis_emit
 from app.models.nutrition import FoodEvent, FoodEventNutrition
 from app.pipeline.food_ner import food_ner
 from app.pipeline.nutrition_lookup import nutrition_lookup
@@ -45,7 +46,7 @@ def utcnow():
 
 # ── Event processing ──────────────────────────────────────────
 
-async def process_event(event_id: str, user_id: str, producer: AIOKafkaProducer):
+async def process_event(event_id: str, user_id: str, redis: Redis):
     """
     Full enrichment pipeline for one food event.
     Reads event from DB, enriches, writes results back.
@@ -124,10 +125,7 @@ async def process_event(event_id: str, user_id: str, producer: AIOKafkaProducer)
             "dish_name": nutrition_data["dish_name"],
             "enriched_at": utcnow().isoformat(),
         }
-        await producer.send(
-            "food.events.enriched",
-            value=json.dumps(enriched_msg).encode("utf-8"),
-        )
+        await redis_emit(redis, "food.events.enriched", enriched_msg)
 
         metrics.total_events_processed += 1
         log.info(
@@ -218,21 +216,19 @@ async def _run_pipeline(event: FoodEvent) -> dict:
 
 # ── Worker loop ───────────────────────────────────────────────
 
-# Backoff schedule for reconnect attempts after a connection-level failure
-# (consumer.start()/producer.start() throwing, or the async-for iteration
-# itself raising e.g. a broker/group-coordinator error). Previously NONE
-# of this was caught — only per-message failures inside the loop were
-# wrapped in try/except, so any connection-level exception propagated
-# straight out of run_enrichment_worker(), silently killing the asyncio
-# task. main.py's health check would then report "stopped" forever, with
-# the actual exception never logged anywhere — nothing ever calls
-# task.exception() on a fire-and-forget asyncio.create_task().
+# Backoff schedule for reconnect attempts after a connection-level failure.
+# Previously NONE of this was caught — only per-message failures inside
+# the loop were wrapped in try/except, so any connection-level exception
+# propagated straight out of run_enrichment_worker(), silently killing the
+# asyncio task. main.py's health check would then report "stopped"
+# forever, with the actual exception never logged anywhere — nothing ever
+# calls task.exception() on a fire-and-forget asyncio.create_task().
 _RECONNECT_BACKOFF_SECONDS = [2, 5, 10, 20, 30]
 
 
 async def run_enrichment_worker():
     """
-    Main Kafka consumer loop.
+    Main consumer loop — Redis Streams version.
     Consumes from food.events.raw, processes each event.
 
     Retries the whole connect-and-consume cycle on any connection-level
@@ -244,20 +240,10 @@ async def run_enrichment_worker():
     attempt = 0
 
     while True:
-        consumer = AIOKafkaConsumer(
-            "food.events.raw",
-            bootstrap_servers=settings.kafka_bootstrap_servers,
-            group_id=settings.kafka_consumer_group_enrichment,
-            value_deserializer=lambda m: json.loads(m.decode("utf-8")),
-            auto_offset_reset="earliest",
-            enable_auto_commit=True,
-        )
-        producer = AIOKafkaProducer(
-            bootstrap_servers=settings.kafka_bootstrap_servers,
-        )
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
 
         try:
-            log.info("enrichment_worker.starting", kafka=settings.kafka_bootstrap_servers, attempt=attempt + 1)
+            log.info("enrichment_worker.starting", redis=settings.redis_url, attempt=attempt + 1)
 
             # Load KB into memory before starting consumption
             async with LocalSession() as local_db:
@@ -266,24 +252,21 @@ async def run_enrichment_worker():
             # Load spaCy model
             food_ner.load()
 
-            await consumer.start()
-            await producer.start()
             log.info("enrichment_worker.ready", kb_entries=nutrition_lookup.entry_count)
             attempt = 0  # reset backoff once we're actually connected and consuming
 
-            async for message in consumer:
-                data = message.value
+            async def handle_message(data: dict, key):
                 event_id = data.get("event_id")
                 user_id = data.get("user_id")
 
                 if not event_id or not user_id:
                     log.warning("enrichment_worker.missing_fields", data=data)
-                    continue
+                    return
 
                 log.info("enrichment_worker.received", event_id=event_id, user_id=user_id)
 
                 try:
-                    await process_event(event_id, user_id, producer)
+                    await process_event(event_id, user_id, redis)
                 except Exception as e:
                     log.error(
                         "enrichment_worker.unhandled_error",
@@ -295,6 +278,14 @@ async def run_enrichment_worker():
                 # Log metrics summary every 100 events
                 if metrics.total_events_processed % 100 == 0 and metrics.total_events_processed > 0:
                     metrics.log_summary()
+
+            await consume_loop(
+                redis,
+                stream="food.events.raw",
+                group=settings.kafka_consumer_group_enrichment,
+                consumer_name="enrichment-worker-1",
+                handler=handle_message,
+            )
 
         except asyncio.CancelledError:
             # Graceful shutdown (main.py cancels this task) — stop cleanly,
@@ -319,8 +310,7 @@ async def run_enrichment_worker():
             continue
 
         finally:
-            await consumer.stop()
-            await producer.stop()
+            await redis.close()
             log.info("enrichment_worker.stopped")
 
 

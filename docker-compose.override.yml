@@ -1,0 +1,48 @@
+# docker-compose.override.yml
+#
+# Docker Compose automatically merges this on top of docker-compose.yml
+# whenever you run `docker compose up` — no extra flag needed. This file
+# is DEV-ONLY: it mounts live source code and forces --reload so editing
+# a .py file on your machine restarts that service's app instantly,
+# without a rebuild.
+#
+# DO NOT copy this file to your Oracle/production server. Production
+# should run the plain docker-compose.yml as-is (baked image, no reload,
+# multiple workers where the base Dockerfile sets them) — --reload and
+# single-worker mode are both explicitly dev-only, they cost more
+# CPU/RAM and are not meant for real traffic.
+#
+# requirements.txt changes or Dockerfile changes still need a real
+# rebuild (docker compose up --build) — only .py source edits are
+# covered by this.
+
+services:
+  auth-service:
+    volumes:
+      - ./services/auth/app:/app/app
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload"]
+
+  user-intelligence-service:
+    volumes:
+      - ./services/user-intelligence/app:/app/app
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload"]
+
+  ingestion-service:
+    volumes:
+      - ./services/ingestion/app:/app/app
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload"]
+
+  ml-inference-service:
+    volumes:
+      - ./services/ml-inference/app:/app/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8004", "--reload"]
+
+  recommendation-service:
+    # Already had a volume mount for app/ in the base compose file —
+    # just adding --reload here on top of it.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8005", "--reload"]
+
+  conversation-service:
+    volumes:
+      - ./services/conversation/app:/app/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8006", "--reload"]

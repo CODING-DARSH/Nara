@@ -1,37 +1,38 @@
-import json
+"""
+NARA — Ingestion Service "Kafka" replacement (now Redis Streams)
+Save as: services/ingestion/app/core/kafka.py
+(keep the filename — every caller does `from app.core.kafka import emit`)
+"""
 import structlog
-from aiokafka import AIOKafkaProducer
+from redis.asyncio import Redis
 from app.core.config import get_settings
+from app.core.redis_streams import emit as _emit
 
 settings = get_settings()
 log = structlog.get_logger()
 
-_producer = None
+_redis: Redis | None = None
 
 
-async def get_producer() -> AIOKafkaProducer:
-    global _producer
-    if _producer is None:
-        _producer = AIOKafkaProducer(
-            bootstrap_servers=settings.kafka_bootstrap_servers,
-            value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-        )
-        await _producer.start()
-        log.info("kafka.producer.started")
-    return _producer
+async def get_producer() -> Redis:
+    """Kept the same function name/shape as the old get_producer() so
+    nothing calling it needs to change — it just returns a Redis client
+    instead of an AIOKafkaProducer now."""
+    global _redis
+    if _redis is None:
+        _redis = Redis.from_url(settings.redis_url, decode_responses=True)
+        log.info("redis_stream.producer.started")
+    return _redis
 
 
 async def close_producer():
-    global _producer
-    if _producer:
-        await _producer.stop()
-        _producer = None
+    global _redis
+    if _redis:
+        await _redis.close()
+        _redis = None
 
 
 async def emit(topic: str, payload: dict, key: str = None):
-    """Emit a message to a Kafka topic."""
-    producer = await get_producer()
-    key_bytes = key.encode("utf-8") if key else None
-    await producer.send_and_wait(topic, value=payload, key=key_bytes)
-    log.info("kafka.emitted", topic=topic, key=key)
-
+    """Same signature as before: emit(topic, payload, key)."""
+    redis = await get_producer()
+    await _emit(redis, topic, payload, key)

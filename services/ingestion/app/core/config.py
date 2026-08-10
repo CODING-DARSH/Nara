@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     minio_access_key: str
     minio_secret_key: str
     minio_secure: bool = False
-    photo_bucket: str = "nara-food-photos-raw"
+    photo_bucket: str = "nara-food-photos"
     photo_processed_bucket: str = "nara-food-photos-processed"
 
     # Upload limits
@@ -39,6 +39,7 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
 
 
 

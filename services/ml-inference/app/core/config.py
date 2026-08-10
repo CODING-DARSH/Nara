@@ -16,8 +16,14 @@ class Settings(BaseSettings):
     # Neon (user data — food_events, food_event_nutrition)
     neon_database_url: str
 
-    # Local Postgres (nutrition_kb, restaurants)
+    # Same Neon project now also holds nutrition_kb/restaurants
+    # (previously a separate local Postgres, now consolidated)
     local_database_url: str
+
+    # ── Redis (cache + streams, replaces Kafka) ────────────────
+    redis_url: str
+    kafka_consumer_group_enrichment: str = "ml-enrichment-workers"
+    kafka_consumer_group_vision: str = "ml-vision-workers"
 
     # ── Claude Vision API ─────────────────────────────────────
     anthropic_api_key: str = ""
@@ -50,5 +56,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
-

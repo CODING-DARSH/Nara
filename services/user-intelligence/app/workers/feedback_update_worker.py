@@ -1,6 +1,6 @@
 """
 Feedback Update Worker
-Kafka consumer on recommendation.feedback topic.
+Redis Streams consumer on recommendation.feedback stream (was Kafka).
 
 This is the missing half of the feedback loop: the recommendation service
 was publishing impression/click/order/skip events, but nothing consumed
@@ -23,16 +23,16 @@ that's needed later.
 Run standalone: python -m app.workers.feedback_update_worker
 """
 import asyncio
-import json
 import structlog
 from uuid import UUID
 
-from aiokafka import AIOKafkaConsumer
+from redis.asyncio import Redis
 import redis.asyncio as aioredis
 
 from app.core.config import get_settings
 from app.core.database import NeonSession
 from app.core.redis import get_redis
+from app.core.redis_streams import consume_loop
 from app.models.intelligence import FoodGraph
 from sqlalchemy import select
 
@@ -54,7 +54,10 @@ ACTION_WEIGHTS = {
     "skip":  {"alpha": 0.04, "target": 0.0},
 }
 
-FEEDBACK_TOPIC = "recommendation.feedback"
+FEEDBACK_STREAM = "recommendation.feedback"
+CONSUMER_GROUP = "feedback-update-workers"
+
+_RECONNECT_BACKOFF_SECONDS = [2, 5, 10, 20, 30]
 
 # Recommendation service caches scored recs on a *different* Redis DB index
 # (db 1) than user-intelligence (db 0) — same server/credentials, separate
@@ -63,14 +66,20 @@ FEEDBACK_TOPIC = "recommendation.feedback"
 # Building a full second Redis client just for this one cross-service
 # invalidation; if this pattern grows, it should become a shared cache
 # util instead of living in two services.
-def _recs_cache_redis_url() -> str:
-    base = settings.redis_url.rsplit("/", 1)[0]
-    return f"{base}/1"
-
-
 async def _invalidate_recs_cache(user_id: str):
+    """
+    Invalidates recommendation-service's scored-recs cache so a click/
+    order is reflected on the next request instead of waiting for TTL.
+
+    Previously this connected to a *different* Redis DB index (db 1)
+    than user-intelligence's own cache (db 0) — a leftover from when
+    each service ran its own local Redis container with per-service DB
+    splitting. Now that everything shares one Upstash REDIS_URL (no
+    local per-service DB index), both caches live in the same logical
+    Redis instance — reuse the same client/URL directly.
+    """
     try:
-        client = aioredis.from_url(_recs_cache_redis_url(), encoding="utf-8", decode_responses=True)
+        client = aioredis.from_url(settings.redis_url, encoding="utf-8", decode_responses=True)
         async for key in client.scan_iter(match=f"recs:{user_id}:*"):
             await client.delete(key)
         await client.aclose()
@@ -121,59 +130,65 @@ async def apply_feedback(user_id: UUID, cuisine_type: str, action: str):
 
 
 async def run_worker():
-    log.info("feedback_update_worker.starting", kafka=settings.kafka_bootstrap_servers)
+    """
+    Same retry/backoff shape used across all workers now — connect,
+    consume, and on any connection-level failure back off and retry
+    rather than letting the whole worker task die silently.
+    """
+    attempt = 0
 
-    consumer = AIOKafkaConsumer(
-        FEEDBACK_TOPIC,
-        bootstrap_servers=settings.kafka_bootstrap_servers,
-        group_id="feedback-update-workers",
-        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
-        auto_offset_reset="earliest",
-        enable_auto_commit=True,
-    )
+    while True:
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
 
-    await consumer.start()
-    log.info("feedback_update_worker.ready")
+        try:
+            log.info("feedback_update_worker.starting", redis=settings.redis_url, attempt=attempt + 1)
+            attempt = 0
 
-    try:
-        async for message in consumer:
-            data = message.value
-            event_type = data.get("event_type")
+            async def handle_message(data: dict, key):
+                event_type = data.get("event_type")
 
-            # Only explicit actions move affinity — see module docstring
-            # for why impressions are intentionally skipped here.
-            if event_type != "feedback":
-                continue
+                # Only explicit actions move affinity — see module
+                # docstring for why impressions are intentionally skipped.
+                if event_type != "feedback":
+                    return
 
-            user_id_str  = data.get("user_id")
-            cuisine_type = data.get("cuisine_type")
-            action       = data.get("action")
+                user_id_str  = data.get("user_id")
+                cuisine_type = data.get("cuisine_type")
+                action       = data.get("action")
 
-            if not user_id_str or not action:
-                log.warning("feedback_update_worker.malformed_event", data=data)
-                continue
+                if not user_id_str or not action:
+                    log.warning("feedback_update_worker.malformed_event", data=data)
+                    return
 
-            if not cuisine_type:
-                # Recommendation router only knows cuisine_type if the
-                # frontend passed it back (it has it — every rec/dish
-                # object already carries cuisine_type). If it's missing,
-                # this is an older client or a bug in the caller; log and
-                # skip rather than guessing.
-                log.debug("feedback_update_worker.missing_cuisine_type",
-                          dish_name=data.get("dish_name"), action=action)
-                continue
+                if not cuisine_type:
+                    log.debug("feedback_update_worker.missing_cuisine_type",
+                              dish_name=data.get("dish_name"), action=action)
+                    return
 
-            try:
-                user_id = UUID(user_id_str)
-                await apply_feedback(user_id, cuisine_type, action)
-            except ValueError:
-                log.error("feedback_update_worker.invalid_uuid", user_id=user_id_str)
-            except Exception as e:
-                log.error("feedback_update_worker.failed", error=str(e), data=data)
+                try:
+                    user_id = UUID(user_id_str)
+                    await apply_feedback(user_id, cuisine_type, action)
+                except ValueError:
+                    log.error("feedback_update_worker.invalid_uuid", user_id=user_id_str)
 
-    finally:
-        await consumer.stop()
-        log.info("feedback_update_worker.stopped")
+            await consume_loop(
+                redis,
+                stream=FEEDBACK_STREAM,
+                group=CONSUMER_GROUP,
+                consumer_name="feedback-worker-1",
+                handler=handle_message,
+            )
+
+        except asyncio.CancelledError:
+            raise
+
+        except Exception as e:
+            wait_s = _RECONNECT_BACKOFF_SECONDS[min(attempt, len(_RECONNECT_BACKOFF_SECONDS) - 1)]
+            log.error("feedback_update_worker.connection_failed",
+                      error=str(e), exc_info=True, retry_in_seconds=wait_s, attempt=attempt + 1)
+            attempt += 1
+            await asyncio.sleep(wait_s)
+            continue
 
 
 if __name__ == "__main__":

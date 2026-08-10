@@ -1,6 +1,6 @@
 """
 Vision Worker — Photo Processing (Sprint 4 Placeholder)
-Kafka consumer on photo.upload.pending
+Redis Streams consumer on photo.upload.pending (was Kafka)
 
 Sprint 4 behaviour:
   - Consume photo upload events
@@ -19,20 +19,22 @@ Why not Claude Vision API?
   Photos collected here become that training dataset.
 """
 import asyncio
-import json
 import uuid
 
 import structlog
-from aiokafka import AIOKafkaConsumer
+from redis.asyncio import Redis
 from sqlalchemy import update
 
 from app.core.config import get_settings
 from app.core.database import NeonSession
 from app.core.metrics import metrics
+from app.core.redis_streams import consume_loop
 from app.models.nutrition import FoodEvent
 
 log = structlog.get_logger()
 settings = get_settings()
+
+_RECONNECT_BACKOFF_SECONDS = [2, 5, 10, 20, 30]
 
 
 async def process_photo_event(event_id: str, user_id: str, s3_key: str):
@@ -62,48 +64,70 @@ async def process_photo_event(event_id: str, user_id: str, s3_key: str):
 
 async def run_vision_worker():
     """
-    Vision worker consumer loop.
+    Vision worker consumer loop — Redis Streams version.
     Sprint 4: Just acknowledges photos and queues for future processing.
+
+    Same retry/backoff shape as the other workers now — connect, consume,
+    back off and retry on any connection-level failure instead of dying
+    silently.
     """
-    log.info("vision_worker.starting", kafka=settings.kafka_bootstrap_servers)
+    attempt = 0
 
-    consumer = AIOKafkaConsumer(
-        "photo.upload.pending",
-        bootstrap_servers=settings.kafka_bootstrap_servers,
-        group_id=settings.kafka_consumer_group_vision,
-        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
-        auto_offset_reset="earliest",
-        enable_auto_commit=True,
-    )
+    while True:
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
 
-    await consumer.start()
-    log.info("vision_worker.ready", note="Sprint 4 placeholder — no model loaded")
+        try:
+            log.info("vision_worker.starting", redis=settings.redis_url, attempt=attempt + 1)
+            log.info("vision_worker.ready", note="Sprint 4 placeholder — no model loaded")
+            attempt = 0
 
-    try:
-        async for message in consumer:
-            data = message.value
-            event_id = data.get("event_id")
-            user_id = data.get("user_id")
-            # Ingestion (app/routers/meals.py) emits this field as "s3_key",
-            # not "minio_key" — this previously always read as an empty string.
-            s3_key = data.get("s3_key", "")
+            async def handle_message(data: dict, key):
+                event_id = data.get("event_id")
+                user_id = data.get("user_id")
+                # Ingestion (app/routers/meals.py) emits this field as "s3_key",
+                # not "minio_key" — this previously always read as an empty string.
+                s3_key = data.get("s3_key", "")
 
-            if not event_id or not user_id:
-                log.warning("vision_worker.missing_fields", data=data)
-                continue
+                if not event_id or not user_id:
+                    log.warning("vision_worker.missing_fields", data=data)
+                    return
 
-            try:
-                await process_photo_event(event_id, user_id, s3_key)
-            except Exception as e:
-                log.error(
-                    "vision_worker.failed",
-                    event_id=event_id,
-                    error=str(e),
-                )
+                try:
+                    await process_photo_event(event_id, user_id, s3_key)
+                except Exception as e:
+                    log.error(
+                        "vision_worker.failed",
+                        event_id=event_id,
+                        error=str(e),
+                    )
 
-    finally:
-        await consumer.stop()
-        log.info("vision_worker.stopped")
+            await consume_loop(
+                redis,
+                stream="photo.upload.pending",
+                group=settings.kafka_consumer_group_vision,
+                consumer_name="vision-worker-1",
+                handler=handle_message,
+            )
+
+        except asyncio.CancelledError:
+            raise
+
+        except Exception as e:
+            wait_s = _RECONNECT_BACKOFF_SECONDS[min(attempt, len(_RECONNECT_BACKOFF_SECONDS) - 1)]
+            log.error(
+                "vision_worker.connection_failed",
+                error=str(e),
+                exc_info=True,
+                retry_in_seconds=wait_s,
+                attempt=attempt + 1,
+            )
+            attempt += 1
+            await asyncio.sleep(wait_s)
+            continue
+
+        finally:
+            await redis.close()
+            log.info("vision_worker.stopped")
 
 
 if __name__ == "__main__":
